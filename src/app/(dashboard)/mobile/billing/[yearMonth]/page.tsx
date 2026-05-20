@@ -23,7 +23,7 @@ function nextMonth(ym: string) {
 
 function getBillingMonth(yearMonth: string) {
   const [year, month] = yearMonth.split("-").map(Number);
-  const d = new Date(year, month - 1 + 3, 1);
+  const d = new Date(year, month - 1 + 2, 1);
   return `${d.getFullYear()}年${d.getMonth() + 1}月`;
 }
 

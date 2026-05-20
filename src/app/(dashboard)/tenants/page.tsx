@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Plus } from "lucide-react";
 import { TenantsTable } from "@/components/tenants-table";
+import { TenantImportButton } from "./import-button";
 
 export default async function TenantsPage({
   searchParams,
@@ -50,20 +51,23 @@ export default async function TenantsPage({
           <h1 className="text-2xl font-bold text-gray-900">テナント一覧</h1>
           <p className="text-sm text-gray-500 mt-1">{rows.length}件</p>
         </div>
-        <Link
-          href="/tenants/new"
-          className="inline-flex items-center gap-2 bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm font-medium hover:bg-primary/80 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          新規登録
-        </Link>
+        <div className="flex items-center gap-2">
+          <TenantImportButton />
+          <Link
+            href="/tenants/new"
+            className="inline-flex items-center gap-2 bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm font-medium hover:bg-primary/80 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            新規登録
+          </Link>
+        </div>
       </div>
 
       <div className="flex gap-2">
         {[
           { label: "有効", value: undefined },
           { label: "解約", value: "churned" },
-          { label: "全て", value: "all" },
+          { label: "すべて", value: "all" },
         ].map(({ label, value }) => {
           const href = value ? `/tenants?status=${value}` : "/tenants";
           const active = statusFilter === value || (!statusFilter && !value);

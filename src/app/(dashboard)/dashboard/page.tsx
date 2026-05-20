@@ -1,19 +1,20 @@
 import { db } from "@/lib/db";
-import { tenants, monthlyUsages, billingAccounts, channelGroups, auditLogs, users } from "@/lib/db/schema";
+import {
+  tenants,
+  monthlyUsages,
+  billingAccounts,
+  channelGroups,
+  auditLogs,
+  users,
+  mobileLines,
+  mobileUsages,
+} from "@/lib/db/schema";
 import { eq, sum, count, desc, sql } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import {
-  Users,
-  Network,
-  TrendingUp,
-  ArrowRight,
-  CheckCircle2,
-  Clock,
-  History,
-} from "lucide-react";
+import { Users, Clock, History, ArrowRight } from "lucide-react";
 import { formatYen } from "@/lib/format";
+import { DashboardTabs } from "./dashboard-tabs";
 
 function currentYearMonth() {
   const now = new Date();
@@ -53,11 +54,13 @@ function actionTypeLabel(type: string) {
 export default async function DashboardPage() {
   const ym = currentYearMonth();
 
+  // ── 全テナント数（IP・携帯共通） ──
   const [{ total: activeTenants }] = await db
     .select({ total: count() })
     .from(tenants)
     .where(eq(tenants.status, "active"));
 
+  // ── IP回線データ ──
   const usageStats = await db
     .select({
       sfStatus: monthlyUsages.sfStatus,
@@ -70,8 +73,13 @@ export default async function DashboardPage() {
     .where(eq(monthlyUsages.yearMonth, ym))
     .groupBy(monthlyUsages.sfStatus);
 
-  const inputDone = usageStats.reduce((s, r) => s + Number(r.cnt), 0);
-  const sfPending = usageStats
+  const inputDoneResult = await db
+    .selectDistinct({ tenantId: monthlyUsages.tenantId })
+    .from(monthlyUsages)
+    .where(eq(monthlyUsages.yearMonth, ym));
+  const inputDone = inputDoneResult.length;
+
+  const ipSfPending = usageStats
     .filter((r) => r.sfStatus === "未送信")
     .reduce((s, r) => s + Number(r.cnt), 0);
 
@@ -79,7 +87,10 @@ export default async function DashboardPage() {
     (s, r) => s + Number(r.totalPackPrice ?? 0) + Number(r.totalOverage ?? 0),
     0
   );
-  const totalCost = usageStats.reduce((s, r) => s + Number(r.totalCost ?? 0), 0);
+  const totalCost = usageStats.reduce(
+    (s, r) => s + Number(r.totalCost ?? 0),
+    0
+  );
   const grossProfit = totalRevenue - totalCost;
 
   const accountList = await db
@@ -108,16 +119,56 @@ export default async function DashboardPage() {
     .orderBy(desc(auditLogs.createdAt))
     .limit(5);
 
+  // ── 携帯回線データ ──
+  const mobileUsageStats = await db
+    .select({ sfStatus: mobileUsages.sfStatus, cnt: count() })
+    .from(mobileUsages)
+    .where(eq(mobileUsages.yearMonth, ym))
+    .groupBy(mobileUsages.sfStatus);
+
+  const mobileSfPending = mobileUsageStats
+    .filter((r) => r.sfStatus === "未送信")
+    .reduce((s, r) => s + Number(r.cnt), 0);
+
+  // IP + 携帯 合計SF送信待ち
+  const totalSfPending = ipSfPending + mobileSfPending;
+
+  const mobileLinesRaw = await db
+    .select({
+      tenantId: mobileLines.tenantId,
+      totalLines: count(),
+      activeLines: sql<number>`sum(case when ${mobileLines.status} = '契約中' then 1 else 0 end)`,
+    })
+    .from(mobileLines)
+    .groupBy(mobileLines.tenantId)
+    .orderBy(mobileLines.tenantId);
+
+  const tenantList = await db
+    .select({ id: tenants.id, name: tenants.companyName })
+    .from(tenants);
+
+  const tenantNameMap = Object.fromEntries(tenantList.map((t) => [t.id, t.name]));
+
+  const mobileLinesPerTenant = mobileLinesRaw.map((m) => ({
+    tenantId: m.tenantId,
+    tenantName: tenantNameMap[m.tenantId] ?? m.tenantId,
+    totalLines: Number(m.totalLines),
+    activeLines: Number(m.activeLines),
+  }));
+
+  const totalMobileLines = mobileLinesPerTenant.reduce((s, r) => s + r.totalLines, 0);
+
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
         <p className="text-sm text-gray-500 mt-1">
-          {ym.replace("-", "年")}月 — 請求管理状況
+          {ym.replace("-", "年")}月の請求管理状況
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {/* 上部カード：有効テナント + SF送信待ち合計のみ */}
+      <div className="grid grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
@@ -131,23 +182,7 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" />
-              使用量入力済み
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">
-              {inputDone}
-              <span className="text-lg text-gray-400">/{activeTenants}</span>
-            </p>
-            <p className="text-xs text-gray-400 mt-1">テナント</p>
-          </CardContent>
-        </Card>
-
-        <Card className={sfPending > 0 ? "border-amber-300" : ""}>
+        <Card className={totalSfPending > 0 ? "border-amber-300" : ""}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
               <Clock className="h-4 w-4 text-amber-500" />
@@ -155,120 +190,66 @@ export default async function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-amber-600">{sfPending}</p>
-            <p className="text-xs text-gray-400 mt-1">件</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              当月推定粗利
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{formatYen(grossProfit)}</p>
+            <p className="text-3xl font-bold text-amber-600">{totalSfPending}</p>
             <p className="text-xs text-gray-400 mt-1">
-              売上: {formatYen(totalRevenue)} / 原価: {formatYen(totalCost)}
+              件（IP: {ipSfPending} / 携帯: {mobileSfPending}）
             </p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">SF送信待ち</CardTitle>
-            <Link href={`/billing/${ym}`} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900">
-              一覧へ <ArrowRight className="h-4 w-4" />
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {sfPending === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">送信待ちはありません</p>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-200">
-                  <span className="text-sm font-medium text-amber-800">
-                    {ym.replace("-", "年")}月分
+      {/* IP回線 / 携帯回線タブ */}
+      <DashboardTabs
+        ym={ym}
+        accountList={accountList}
+        sfPending={ipSfPending}
+        inputDone={inputDone}
+        activeTenants={activeTenants}
+        grossProfit={grossProfit}
+        totalRevenue={totalRevenue}
+        totalCost={totalCost}
+        mobileStat={{ totalLines: totalMobileLines, sfPending: mobileSfPending }}
+        mobileLines={mobileLinesPerTenant}
+      />
+
+      {/* 更新履歴 */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="h-4 w-4" />
+            更新履歴
+          </CardTitle>
+          <Link
+            href="/activity"
+            className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900"
+          >
+            もっと見る <ArrowRight className="h-4 w-4" />
+          </Link>
+        </CardHeader>
+        <CardContent>
+          {recentLogs.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-4">履歴がありません</p>
+          ) : (
+            <ul className="space-y-3">
+              {recentLogs.map((log) => (
+                <li key={log.id} className="flex items-start gap-3">
+                  <span className="mt-0.5 inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 whitespace-nowrap">
+                    {actionTypeLabel(log.actionType)}
                   </span>
-                  <Badge variant="outline" className="border-amber-400 text-amber-700">
-                    {sfPending}件 未送信
-                  </Badge>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">請求アカウント ch状況</CardTitle>
-            <Link href="/billing-accounts" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900">
-              一覧へ <ArrowRight className="h-4 w-4" />
-            </Link>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {accountList.slice(0, 5).map((a) => (
-                <div key={a.id} className="space-y-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <Link href={`/billing-accounts/${a.id}`} className="font-mono text-blue-600 hover:underline">
-                      {a.billingCode}
-                    </Link>
-                    <span className="text-gray-500 text-xs truncate ml-2 max-w-[200px]">{a.name}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm text-gray-700 truncate">
+                      {log.message ?? `${actionTypeLabel(log.actionType)}が実行されました`}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {log.userName ?? "システム"} · {relativeTime(log.createdAt)}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 rounded-full" style={{ width: "100%" }} />
-                    </div>
-                    <span className="text-xs text-gray-500 w-16 text-right">{Number(a.totalCh)}ch</span>
-                  </div>
-                </div>
+                </li>
               ))}
-              {accountList.length === 0 && (
-                <p className="text-sm text-gray-500 text-center py-4">請求アカウントデータがありません</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-2">
-              <History className="h-4 w-4" />
-              更新履歴
-            </CardTitle>
-            <Link href="/activity" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900">
-              もっと見る <ArrowRight className="h-4 w-4" />
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {recentLogs.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">履歴がありません</p>
-            ) : (
-              <ul className="space-y-3">
-                {recentLogs.map((log) => (
-                  <li key={log.id} className="flex items-start gap-3">
-                    <span className="mt-0.5 inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 whitespace-nowrap">
-                      {actionTypeLabel(log.actionType)}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm text-gray-700 truncate">
-                        {log.message ?? `${actionTypeLabel(log.actionType)}が実行されました`}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {log.userName ?? "システム"} · {relativeTime(log.createdAt)}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

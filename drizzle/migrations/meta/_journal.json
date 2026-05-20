@@ -8,6 +8,13 @@
       "when": 1776324450379,
       "tag": "0000_narrow_naoko",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1777005939895,
+      "tag": "0001_heavy_joseph",
+      "breakpoints": true
     }
   ]
 }

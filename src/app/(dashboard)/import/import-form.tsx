@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, FileText, Loader2 } from "lucide-react";
+import { Upload, FileText, Loader2, Smartphone } from "lucide-react";
 
 interface PreviewRow {
   companyName: string;
@@ -17,7 +17,19 @@ interface PreviewRow {
   phoneNumber: string;
 }
 
+interface SoftBankPreviewRow {
+  phoneNumber: string;
+  planName: string;
+  overageTotal: number;
+}
+
 interface ImportResult {
+  success: number;
+  unmatched: string[];
+  errors: string[];
+}
+
+interface SoftBankImportResult {
   success: number;
   unmatched: string[];
   errors: string[];
@@ -27,10 +39,16 @@ export function ImportForm() {
   const [yearMonth, setYearMonth] = useState("");
   const [adjustOneFile, setAdjustOneFile] = useState<File | null>(null);
   const [proDelightFile, setProDelightFile] = useState<File | null>(null);
+  const [softBankFile, setSoftBankFile] = useState<File | null>(null);
   const [adjustOnePreview, setAdjustOnePreview] = useState<PreviewRow[]>([]);
   const [proDelightPreview, setProDelightPreview] = useState<PreviewRow[]>([]);
+  const [softBankPreview, setSoftBankPreview] = useState<SoftBankPreviewRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ adjustOne?: ImportResult; proDelight?: ImportResult } | null>(null);
+  const [result, setResult] = useState<{
+    adjustOne?: ImportResult;
+    proDelight?: ImportResult;
+    softBank?: SoftBankImportResult;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const parseAdjustOneCsv = (text: string): PreviewRow[] => {
@@ -55,7 +73,7 @@ export function ImportForm() {
     return lines.slice(1, 11).map((line) => {
       const cols = line.split(",");
       return {
-        companyName: cols[3]?.trim() ?? "", // 発信番号で後で照合
+        companyName: cols[3]?.trim() ?? "",
         destinationType: cols[5]?.trim().includes("携帯") ? "携帯" : "固定",
         durationSeconds: parseInt(cols[7]?.trim() ?? "0", 10) || 0,
         cost: parseFloat(cols[8]?.trim() ?? "0") || 0,
@@ -63,6 +81,15 @@ export function ImportForm() {
         phoneNumber: cols[3]?.trim() ?? "",
       };
     });
+  };
+
+  // SoftBank Excelファイルのプレビュー（クライアント側では件数のみ表示）
+  const handleSoftBankFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    if (!file) return;
+    setSoftBankFile(file);
+    // Excelはクライアントでパースしないのでファイル名だけ表示
+    setSoftBankPreview([]);
   };
 
   const handleFileChange = (
@@ -94,7 +121,7 @@ export function ImportForm() {
       setError("対象年月を入力してください");
       return;
     }
-    if (!adjustOneFile && !proDelightFile) {
+    if (!adjustOneFile && !proDelightFile && !softBankFile) {
       setError("CSVファイルを選択してください");
       return;
     }
@@ -108,6 +135,7 @@ export function ImportForm() {
       formData.append("yearMonth", yearMonth);
       if (adjustOneFile) formData.append("adjustOne", adjustOneFile);
       if (proDelightFile) formData.append("proDelight", proDelightFile);
+      if (softBankFile) formData.append("softBank", softBankFile);
 
       const res = await fetch("/api/billing/import", {
         method: "POST",
@@ -148,7 +176,7 @@ export function ImportForm() {
         </CardContent>
       </Card>
 
-      {/* File Upload Areas */}
+      {/* IP回線 CSV */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -165,7 +193,7 @@ export function ImportForm() {
               </span>
               <input
                 type="file"
-                accept=".csv"
+                accept=".xlsx,.csv"
                 className="hidden"
                 onChange={(e) => handleFileChange(e, "adjustOne")}
               />
@@ -215,7 +243,7 @@ export function ImportForm() {
               </span>
               <input
                 type="file"
-                accept=".csv"
+                accept=".xlsx,.csv"
                 className="hidden"
                 onChange={(e) => handleFileChange(e, "proDelight")}
               />
@@ -251,6 +279,41 @@ export function ImportForm() {
         </Card>
       </div>
 
+      {/* SoftBank Excel */}
+      <Card className="border-blue-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Smartphone className="h-5 w-5 text-blue-600" />
+            SoftBank 超過代金ファイル
+            <Badge variant="secondary" className="text-xs">携帯回線</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-blue-200 rounded-lg cursor-pointer hover:border-blue-400 transition-colors">
+            <Upload className="h-6 w-6 text-blue-400 mb-1" />
+            <span className="text-sm text-gray-500">
+              {softBankFile ? softBankFile.name : "クリックしてファイルを選択（.xlsx）"}
+            </span>
+            <input
+              type="file"
+              accept=".xlsx,.csv"
+              className="hidden"
+              onChange={handleSoftBankFileChange}
+            />
+          </label>
+          {softBankFile && (
+            <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+              <p className="text-xs text-blue-700">
+                ✓ <span className="font-medium">{softBankFile.name}</span> が選択されました
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                インポート実行時に超過11項目を自動集計し、電話番号でテナントと紐付けします
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
           {error}
@@ -262,7 +325,7 @@ export function ImportForm() {
           <CardHeader>
             <CardTitle>インポート結果</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
             {result.adjustOne && (
               <div>
                 <p className="text-sm font-medium mb-1">AdjustOne</p>
@@ -273,13 +336,10 @@ export function ImportForm() {
                   )}
                 </div>
                 {result.adjustOne.unmatched.length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-xs font-medium text-amber-700 mb-1">未照合一覧（{result.adjustOne.unmatched.length}件）:</p>
-                    <div className="max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
-                      {result.adjustOne.unmatched.map((u, i) => (
-                        <p key={i} className="text-xs text-amber-800 font-mono">{u}</p>
-                      ))}
-                    </div>
+                  <div className="mt-2 max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
+                    {result.adjustOne.unmatched.map((u, i) => (
+                      <p key={i} className="text-xs text-amber-800 font-mono">{u}</p>
+                    ))}
                   </div>
                 )}
               </div>
@@ -294,10 +354,33 @@ export function ImportForm() {
                   )}
                 </div>
                 {result.proDelight.unmatched.length > 0 && (
+                  <div className="mt-2 max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
+                    {result.proDelight.unmatched.map((u, i) => (
+                      <p key={i} className="text-xs text-amber-800 font-mono">{u}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {result.softBank && (
+              <div>
+                <p className="text-sm font-medium mb-1 flex items-center gap-1">
+                  <Smartphone className="h-4 w-4 text-blue-600" />
+                  SoftBank 携帯回線
+                </p>
+                <div className="flex gap-3">
+                  <Badge variant="default">成功: {result.softBank.success}件</Badge>
+                  {result.softBank.unmatched.length > 0 && (
+                    <Badge variant="secondary">未照合: {result.softBank.unmatched.length}件</Badge>
+                  )}
+                </div>
+                {result.softBank.unmatched.length > 0 && (
                   <div className="mt-2">
-                    <p className="text-xs font-medium text-amber-700 mb-1">未照合一覧（{result.proDelight.unmatched.length}件）:</p>
+                    <p className="text-xs font-medium text-amber-700 mb-1">
+                      未照合電話番号（{result.softBank.unmatched.length}件）— マスタ管理で登録してください
+                    </p>
                     <div className="max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
-                      {result.proDelight.unmatched.map((u, i) => (
+                      {result.softBank.unmatched.map((u, i) => (
                         <p key={i} className="text-xs text-amber-800 font-mono">{u}</p>
                       ))}
                     </div>
@@ -312,9 +395,9 @@ export function ImportForm() {
       <div>
         <Button onClick={handleImport} disabled={loading}>
           {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />
           ) : (
-            <Upload className="h-4 w-4" />
+            <Upload className="h-4 w-4 mr-2" />
           )}
           インポート実行
         </Button>

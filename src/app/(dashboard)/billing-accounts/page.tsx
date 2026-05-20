@@ -47,7 +47,6 @@ export default async function BillingAccountsPage() {
           新規登録
         </Link>
       </div>
-
       <Card>
         <CardContent className="p-4 space-y-4">
           <BillingAccountsTable rows={tableRows} />

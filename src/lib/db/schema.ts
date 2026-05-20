@@ -1,6 +1,92 @@
 import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
+// ============================================================
+// Mobile Lines（携帯回線マスタ）
+// ============================================================
+export const mobileLines = sqliteTable(
+  "mobile_lines",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    phoneNumber: text("phone_number").notNull().unique(),
+    status: text("status", { enum: ["契約中", "解約済"] })
+      .notNull()
+      .default("契約中"),
+    contractStart: text("contract_start"),
+    contractEnd: text("contract_end"),
+    deviceReturned: integer("device_returned").notNull().default(0),
+    notes: text("notes"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [index("idx_mobile_lines_tenant").on(t.tenantId)]
+);
 
+// ============================================================
+// Mobile Usages（携帯月次使用量）
+// ============================================================
+export const mobileUsages = sqliteTable(
+  "mobile_usages",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    yearMonth: text("year_month").notNull(),
+    totalLines: integer("total_lines").notNull().default(0),
+    overageTotal: real("overage_total").notNull().default(0),
+    sfStatus: text("sf_status", {
+      enum: ["未送信", "送信済", "エラー", "超過なし"],
+    })
+      .notNull()
+      .default("未送信"),
+    sfSentAt: text("sf_sent_at"),
+    sfErrorMessage: text("sf_error_message"),
+    importedAt: text("imported_at"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [
+    index("idx_mobile_usages_tenant_month").on(t.tenantId, t.yearMonth),
+  ]
+);
+
+// ============================================================
+// Mobile Usage Details（超過項目別明細）
+// ============================================================
+export const mobileUsageDetails = sqliteTable(
+  "mobile_usage_details",
+  {
+    id: text("id").primaryKey(),
+    mobileUsageId: text("mobile_usage_id")
+      .notNull()
+      .references(() => mobileUsages.id),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    phoneNumber: text("phone_number").notNull(),
+    itemName: text("item_name").notNull(),
+    amount: real("amount").notNull().default(0),
+    yearMonth: text("year_month").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [
+    index("idx_mobile_usage_details_usage").on(t.mobileUsageId),
+    index("idx_mobile_usage_details_tenant").on(t.tenantId),
+  ]
+);
 // ============================================================
 // Users
 // ============================================================

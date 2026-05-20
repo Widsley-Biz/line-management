@@ -29,6 +29,7 @@
     "clsx": "^2.1.1",
     "drizzle-kit": "^0.31.9",
     "drizzle-orm": "^0.45.1",
+    "exceljs": "^4.4.0",
     "jsforce": "^3.10.14",
     "lucide-react": "^0.577.0",
     "next": "16.1.6",

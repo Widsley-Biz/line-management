@@ -22,6 +22,8 @@ export default async function ActivityPage({
       targetTable: auditLogs.targetTable,
       createdAt: auditLogs.createdAt,
       userName: users.name,
+      beforeJson: auditLogs.beforeJson,
+      afterJson: auditLogs.afterJson,  
     })
     .from(auditLogs)
     .leftJoin(users, eq(auditLogs.userId, users.id))

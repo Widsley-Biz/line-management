@@ -12,6 +12,11 @@ export async function logActivity(params: {
   afterJson?: object;
 }) {
   try {
+    // 日本時間で保存
+    const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000)
+      .toISOString()
+      .replace("Z", "+09:00");
+
     await db.insert(auditLogs).values({
       id: randomUUID(),
       userId: params.userId ?? null,
@@ -21,7 +26,7 @@ export async function logActivity(params: {
       targetId: params.targetId ?? null,
       beforeJson: null,
       afterJson: params.afterJson ? JSON.stringify(params.afterJson) : null,
-      createdAt: new Date().toISOString(),
+      createdAt: jstNow,
     });
   } catch {
     // ログ失敗でメイン処理を止めない

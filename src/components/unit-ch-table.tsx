@@ -81,7 +81,7 @@ export function UnitChTable({ rows, updateAction }: UnitChTableProps) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50">
-              <SortableHeader label="テナント" column="companyName" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
+              <SortableHeader label="取引先" column="companyName" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
               <SortableHeader label="電話番号" column="phoneNumber" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
               <SortableHeader label="請求ID" column="billingCode" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
               <th className={thCls}>FC番号</th>

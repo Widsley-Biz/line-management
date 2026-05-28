@@ -307,7 +307,7 @@ export function ImportForm() {
                 ✓ <span className="font-medium">{softBankFile.name}</span> が選択されました
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                インポート実行時に超過11項目を自動集計し、電話番号でテナントと紐付けします
+                インポート実行時に超過11項目を自動集計し、電話番号で取引先と紐付けします
               </p>
             </div>
           )}

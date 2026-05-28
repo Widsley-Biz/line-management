@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { phoneNumber, tenantId, status, contractStart, contractEnd, deviceReturned, notes } = body;
     if (!phoneNumber || !tenantId) {
-      return NextResponse.json({ error: "電話番号とテナントIDは必須です" }, { status: 400 });
+      return NextResponse.json({ error: "電話番号と取引先IDは必須です" }, { status: 400 });
     }
     const now = new Date().toISOString();
     const id = randomUUID();

@@ -30,7 +30,7 @@ import {
 const commonItems = [
   { href: "/",         label: "ダッシュボード", icon: LayoutDashboard },
   { href: "/import",   label: "インポート",     icon: Upload },
-  { href: "/tenants",  label: "テナント",       icon: Users },
+  { href: "/tenants",  label: "取引先",         icon: Users },
   { href: "/activity", label: "更新履歴",       icon: History },
   { href: "/settings", label: "設定",           icon: Settings },
 ];

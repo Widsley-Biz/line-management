@@ -103,7 +103,7 @@ export function DashboardTabs({
                   {inputDone}
                   <span className="text-lg text-gray-400">/{activeTenants}</span>
                 </p>
-                <p className="text-xs text-gray-400 mt-1">テナント</p>
+                <p className="text-xs text-gray-400 mt-1">取引先</p>
               </CardContent>
             </Card>
 

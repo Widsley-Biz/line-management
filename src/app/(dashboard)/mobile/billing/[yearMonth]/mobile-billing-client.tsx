@@ -209,7 +209,7 @@ export function MobileBillingClient({
                   {isSubmitting ? "登録中..." : "追加して再計算"}
                 </button>
                 <p className="text-xs text-gray-400">
-                  電話番号でテナントを自動紐付けします
+                  電話番号で取引先を自動紐付けします
                 </p>
               </div>
             </form>

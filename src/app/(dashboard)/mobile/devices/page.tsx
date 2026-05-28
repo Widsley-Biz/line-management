@@ -2,7 +2,6 @@ import { db } from "@/lib/db";
 import { mobileUsageDetails, mobileLines, tenants } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatYen } from "@/lib/format";
 import { DevicesTable } from "./devices-table-client";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -97,8 +96,6 @@ export default async function MobileDevicesPage({
       a.phoneNumber.localeCompare(b.phoneNumber)
   );
 
-  const totalOverage = rows.reduce((s, r) => s + r.overageTotal, 0);
-
   return (
     <div className="space-y-6">
       {/* ヘッダー：右上に月ナビ */}
@@ -124,23 +121,7 @@ export default async function MobileDevicesPage({
         </div>
       </div>
 
-      {/* サマリー */}
-      <div className="grid grid-cols-2 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-gray-500">超過端末数</p>
-            <p className="text-2xl font-bold">{rows.length} 台</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-gray-500">超過合計</p>
-            <p className="text-2xl font-bold text-red-600">{formatYen(totalOverage)}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* テーブル */}
+      {/* カード＋テーブル（クライアント側で検索連動） */}
       <Card>
         <CardContent className="p-0">
           {rows.length === 0 ? (

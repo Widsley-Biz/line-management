@@ -1,7 +1,8 @@
 "use client";
-import { useState, useMemo } from "react";
-import { Search, ChevronDown, ChevronRight, PackageCheck, PackageX } from "lucide-react";
+import { useState, useMemo, Fragment } from "react";
+import { Search, ChevronDown, ChevronRight, PackageCheck, PackageX, Building2, Smartphone, TrendingUp } from "lucide-react";
 import { formatYen } from "@/lib/format";
+import { Card, CardContent } from "@/components/ui/card";
 
 type PhoneRow = {
   phoneNumber: string;
@@ -75,9 +76,49 @@ export function DevicesTable({
     );
   }
 
+  const uniqueCompanies = useMemo(
+    () => new Set(filtered.map((r) => r.tenantId)).size,
+    [filtered]
+  );
+  const totalOverageFiltered = useMemo(
+    () => filtered.reduce((s, r) => s + r.overageTotal, 0),
+    [filtered]
+  );
+
   return (
     <>
-      <div className="px-4 pt-4 pb-2 flex items-center gap-3">
+      {/* ヘッダーカード（検索連動） */}
+      <div className="grid grid-cols-3 gap-4 px-4 pt-4 pb-2">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+              <Building2 className="h-3.5 w-3.5" />
+              取引先数
+            </div>
+            <p className="text-2xl font-bold">{uniqueCompanies} <span className="text-sm font-normal text-gray-400">社</span></p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+              <Smartphone className="h-3.5 w-3.5" />
+              契約電話番号数
+            </div>
+            <p className="text-2xl font-bold">{filtered.length} <span className="text-sm font-normal text-gray-400">件</span></p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+              <TrendingUp className="h-3.5 w-3.5" />
+              超過料金
+            </div>
+            <p className="text-2xl font-bold text-red-600">{formatYen(totalOverageFiltered)}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="px-4 pt-2 pb-2 flex items-center gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
@@ -124,9 +165,8 @@ export function DevicesTable({
               </tr>
             )}
             {filtered.map((r) => (
-              <>
+              <Fragment key={r.phoneNumber}>
                 <tr
-                  key={r.phoneNumber}
                   className="border-b hover:bg-gray-50 cursor-pointer"
                   onClick={() => toggleExpand(r.phoneNumber)}
                 >
@@ -157,7 +197,7 @@ export function DevicesTable({
                   </td>
                 </tr>
                 {expanded.has(r.phoneNumber) && (
-                  <tr key={`${r.phoneNumber}-detail`} className="border-b bg-gray-50">
+                  <tr className="border-b bg-gray-50">
                     <td colSpan={7} className="px-8 py-3">
                       <table className="w-full text-xs">
                         <thead>
@@ -186,7 +226,7 @@ export function DevicesTable({
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>

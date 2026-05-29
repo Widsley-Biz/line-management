@@ -42,9 +42,10 @@ const ipItems = [
 ];
 
 const mobileItems = [
-  { href: "/mobile/master",  label: "回線マスタ",   icon: Database },
-  { href: "/mobile/billing", label: "請求管理", icon: CreditCard },
-  { href: "/mobile/devices", label: "契約端末一覧", icon: Smartphone },
+  { href: "/mobile/master",         label: "回線マスタ",   icon: Database },
+  { href: "/mobile/billing",        label: "請求管理",     icon: CreditCard },
+  { href: "/mobile/devices",        label: "契約端末一覧", icon: Smartphone },
+  { href: "/mobile/billing-items",  label: "課金項目マスタ", icon: Settings },
 ];
 
 export function AppSidebar() {

@@ -40,7 +40,7 @@ async function createTenant(formData: FormData) {
     updatedAt: now,
   });
 
-  redirect(`/tenants/${id}`);
+  redirect(`/tenants`);
 }
 
 export default async function NewTenantPage() {

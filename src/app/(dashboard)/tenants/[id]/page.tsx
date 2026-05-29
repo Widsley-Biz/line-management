@@ -237,7 +237,7 @@ export default async function TenantDetailPage({
                   <Input id="companyName" name="companyName" defaultValue={tenant.companyName} required />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="slug">スラッグ *</Label>
+                  <Label htmlFor="slug">取引先コード *</Label>
                   <Input id="slug" name="slug" defaultValue={tenant.slug} required />
                 </div>
               </div>

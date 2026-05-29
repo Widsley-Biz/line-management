@@ -48,7 +48,7 @@ export default async function TenantsPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">テナント一覧</h1>
+          <h1 className="text-2xl font-bold text-gray-900">取引先一覧</h1>
           <p className="text-sm text-gray-500 mt-1">{rows.length}件</p>
         </div>
         <div className="flex items-center gap-2">

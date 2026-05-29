@@ -33,8 +33,8 @@ function relativeTime(iso: string) {
 
 function actionTypeLabel(type: string) {
   const map: Record<string, string> = {
-    tenant_create: "テナント登録",
-    tenant_update: "テナント更新",
+    tenant_create: "取引先登録",
+    tenant_update: "取引先更新",
     user_create: "ユーザー追加",
     user_update: "ユーザー更新",
     user_delete: "ユーザー削除",
@@ -167,13 +167,13 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* 上部カード：有効テナント + SF送信待ち合計のみ */}
+      {/* 上部カード：有効取引先 + SF送信待ち合計のみ */}
       <div className="grid grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
               <Users className="h-4 w-4" />
-              有効テナント
+              有効取引先
             </CardTitle>
           </CardHeader>
           <CardContent>

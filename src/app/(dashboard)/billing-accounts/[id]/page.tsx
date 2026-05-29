@@ -223,7 +223,7 @@ export default async function BillingAccountDetailPage({
                     {g.tenantName && (
                       <span>
                         {" "}
-                        / テナント:{" "}
+                        / 取引先:{" "}
                         <Link
                           href={`/tenants/${g.tenantId}`}
                           className="text-blue-600 hover:underline"

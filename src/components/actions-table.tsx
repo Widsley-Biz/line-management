@@ -95,7 +95,7 @@ export function ActionsTable({
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
         <input
           type="text"
-          placeholder="種別・説明・テナント・実行者・ステータスで検索..."
+          placeholder="種別・説明・取引先・実行者・ステータスで検索..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full pl-9 pr-4 h-9 rounded-lg border border-input bg-background text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -108,7 +108,7 @@ export function ActionsTable({
             <tr className="border-b bg-gray-50">
               <SortableHeader label="種別" column="type" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
               <SortableHeader label="説明" column="description" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
-              <SortableHeader label="テナント" column="companyName" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
+              <SortableHeader label="取引先" column="companyName" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
               <SortableHeader label="実行者" column="assigneeName" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
               <SortableHeader label="期限" column="dueDate" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
               <SortableHeader label="ステータス" column="status" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
@@ -212,7 +212,7 @@ export function ActionsTable({
                           </select>
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs">テナント</Label>
+                          <Label className="text-xs">取引先</Label>
                           <TenantCombobox
                             tenants={tenantList}
                             name="tenantId"

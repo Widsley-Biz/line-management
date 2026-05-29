@@ -130,7 +130,7 @@ export default async function ActionsPage({
               </select>
             </div>
             <div className="space-y-1">
-              <Label>テナント</Label>
+              <Label>取引先</Label>
               <TenantCombobox tenants={tenantList} name="tenantId" />
             </div>
             <div className="col-span-2 space-y-1">

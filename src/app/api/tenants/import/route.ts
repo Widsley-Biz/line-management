@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
 
     await logActivity({
       actionType: "import",
-      message: `テナント一括登録: 登録${inserted}件、スキップ${skipped}件`,
+      message: `取引先一括登録: 登録${inserted}件、スキップ${skipped}件`,
       afterJson: { inserted, skipped, duplicates, errors },
     });
 

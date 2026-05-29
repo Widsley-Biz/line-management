@@ -30,7 +30,7 @@ export function TenantImportButton() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "テナント_インポートテンプレート.csv";
+    a.download = "取引先_インポートテンプレート.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -81,7 +81,7 @@ export function TenantImportButton() {
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Upload className="h-4 w-4" />
-                テナントCSV一括登録
+                取引先CSV一括登録
               </CardTitle>
               <button
                 onClick={handleClose}

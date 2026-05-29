@@ -155,7 +155,7 @@ export function MobileMasterClient({ lines, tenants }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">回線マスタ管理</h1>
-          <p className="text-sm text-gray-500 mt-1">電話番号とテナントの紐付けを管理します</p>
+          <p className="text-sm text-gray-500 mt-1">電話番号と取引先の紐付けを管理します</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => { setShowImport(!showImport); setShowForm(false); }}>

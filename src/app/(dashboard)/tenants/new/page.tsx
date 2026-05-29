@@ -40,7 +40,7 @@ async function createTenant(formData: FormData) {
     updatedAt: now,
   });
 
-  redirect(`/tenants/${id}`);
+  redirect(`/tenants`);
 }
 
 export default async function NewTenantPage() {
@@ -55,12 +55,12 @@ export default async function NewTenantPage() {
         <Link href="/tenants" className="text-gray-500 hover:text-gray-900">
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900">テナント新規登録</h1>
+        <h1 className="text-2xl font-bold text-gray-900">取引先新規登録</h1>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>テナント情報</CardTitle>
+          <CardTitle>取引先情報</CardTitle>
         </CardHeader>
         <CardContent>
           <form action={createTenant} className="space-y-4">

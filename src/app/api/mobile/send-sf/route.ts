@@ -158,9 +158,9 @@ export async function POST(req: NextRequest) {
     for (const usage of pending) {
       const tenant = tenantMap.get(usage.tenantId);
       if (!tenant) {
-        results.errors.push(`テナントが見つかりません: ${usage.tenantId}`);
+        results.errors.push(`取引先が見つかりません: ${usage.tenantId}`);
         await db.update(mobileUsages)
-          .set({ sfStatus: "エラー", sfErrorMessage: "テナントが見つかりません", updatedAt: now })
+          .set({ sfStatus: "エラー", sfErrorMessage: "取引先が見つかりません", updatedAt: now })
           .where(eq(mobileUsages.id, usage.id));
         continue;
       }

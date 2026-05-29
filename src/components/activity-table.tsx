@@ -15,8 +15,8 @@ type ActivityRow = {
 };
 
 const ACTION_TYPE_LABELS: Record<string, string> = {
-  tenant_create: "テナント登録",
-  tenant_update: "テナント更新",
+  tenant_create: "取引先登録",
+  tenant_update: "取引先更新",
   user_create: "ユーザー追加",
   user_update: "ユーザー更新",
   user_delete: "ユーザー削除",

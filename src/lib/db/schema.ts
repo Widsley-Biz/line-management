@@ -390,6 +390,18 @@ export const callLogs = sqliteTable(
 );
 
 // ============================================================
+// Mobile Billing Items（SoftBank課金項目マスタ）
+// ============================================================
+export const mobileBillingItems = sqliteTable("mobile_billing_items", {
+  id: text("id").primaryKey(),
+  itemName: text("item_name").notNull().unique(), // CSV/Excelヘッダ行の項目名でマッチング
+  isBillable: integer("is_billable", { mode: "boolean" }).notNull().default(true),
+  continuousImport: integer("continuous_import", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+});
+
+// ============================================================
 // Audit Logs（監査ログ）
 // ============================================================
 export const auditLogs = sqliteTable("audit_logs", {

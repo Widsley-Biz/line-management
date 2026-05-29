@@ -30,7 +30,7 @@ import {
 const commonItems = [
   { href: "/",         label: "ダッシュボード", icon: LayoutDashboard },
   { href: "/import",   label: "インポート",     icon: Upload },
-  { href: "/tenants",  label: "テナント",       icon: Users },
+  { href: "/tenants",  label: "取引先",         icon: Users },
   { href: "/activity", label: "更新履歴",       icon: History },
   { href: "/settings", label: "設定",           icon: Settings },
 ];
@@ -42,9 +42,10 @@ const ipItems = [
 ];
 
 const mobileItems = [
-  { href: "/mobile/master",  label: "回線マスタ",   icon: Database },
-  { href: "/mobile/billing", label: "請求管理", icon: CreditCard },
-  { href: "/mobile/devices", label: "契約端末一覧", icon: Smartphone },
+  { href: "/mobile/master",         label: "回線マスタ",   icon: Database },
+  { href: "/mobile/billing",        label: "請求管理",     icon: CreditCard },
+  { href: "/mobile/devices",        label: "契約端末一覧", icon: Smartphone },
+  { href: "/mobile/billing-items",  label: "課金項目マスタ", icon: Settings },
 ];
 
 export function AppSidebar() {

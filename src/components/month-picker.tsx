@@ -11,7 +11,7 @@ export function MonthPicker({
   return (
     <input
       type="month"
-      defaultValue={yearMonth}
+      value={yearMonth}
       onChange={(e) => {
         if (e.target.value) {
           if (basePath.includes("?")) {

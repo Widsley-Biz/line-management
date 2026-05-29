@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       .limit(1);
 
     if (!tenant) {
-      return NextResponse.json({ error: "テナントが見つかりません" }, { status: 404 });
+      return NextResponse.json({ error: "取引先が見つかりません" }, { status: 404 });
     }
 
     if (!tenant.sfOpportunityId) {

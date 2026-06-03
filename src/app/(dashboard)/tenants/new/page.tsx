@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import { eq } from "drizzle-orm";
 
 async function createTenant(formData: FormData) {
   "use server";
@@ -18,11 +19,21 @@ async function createTenant(formData: FormData) {
   const notes = (formData.get("notes") as string) || null;
 
   if (!companyName || !sfOpportunityId) {
-    throw new Error("必須項目を入力してください");
+    redirect("/tenants/new?error=required");
   }
 
   // slugはSF商談IDを自動使用
   const slug = sfOpportunityId;
+
+  const existing = await db
+    .select({ id: tenants.id })
+    .from(tenants)
+    .where(eq(tenants.slug, slug))
+    .get();
+
+  if (existing) {
+    redirect(`/tenants/new?error=duplicate-slug&sfOpportunityId=${encodeURIComponent(sfOpportunityId)}`);
+  }
 
   const now = new Date().toISOString();
   const id = randomUUID();
@@ -40,10 +51,20 @@ async function createTenant(formData: FormData) {
     updatedAt: now,
   });
 
-  redirect(`/tenants`);
+  redirect("/tenants");
 }
 
-export default async function NewTenantPage() {
+const ERROR_MESSAGES: Record<string, string> = {
+  required: "会社名とSF商談IDは必須です。",
+  "duplicate-slug": "このSF商談IDはすでに登録されています。",
+};
+
+export default async function NewTenantPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
   const userList = await db
     .select({ id: users.id, name: users.name })
     .from(users)
@@ -63,6 +84,11 @@ export default async function NewTenantPage() {
           <CardTitle>取引先情報</CardTitle>
         </CardHeader>
         <CardContent>
+          {error && ERROR_MESSAGES[error] && (
+            <div className="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+              {ERROR_MESSAGES[error]}
+            </div>
+          )}
           <form action={createTenant} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">

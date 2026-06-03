@@ -1,0 +1,1 @@
+ALTER TABLE `mobile_lines` ADD `device_returned` integer DEFAULT 0 NOT NULL;

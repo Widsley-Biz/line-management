@@ -20,12 +20,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 const commonItems = [
   { href: "/",         label: "ダッシュボード", icon: LayoutDashboard },
@@ -80,28 +74,23 @@ export function AppSidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        <TooltipProvider delay={0}>
           {/* 共通メニュー */}
           {commonItems.map(({ href, label, icon: Icon }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
             return (
-              <Tooltip key={href}>
-                <TooltipTrigger className="block w-full">
-                  <Link
-                    href={href}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                      active
-                        ? "bg-gray-700 text-white"
-                        : "text-gray-400 hover:bg-gray-800 hover:text-white"
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {label}
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent side="right">{label}</TooltipContent>
-              </Tooltip>
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                  active
+                    ? "bg-gray-700 text-white"
+                    : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {label}
+              </Link>
             );
           })}
 
@@ -136,27 +125,22 @@ export function AppSidebar() {
             {tabItems.map(({ href, label, icon: Icon }) => {
               const active = pathname.startsWith(href);
               return (
-                <Tooltip key={href}>
-                  <TooltipTrigger className="block w-full">
-                    <Link
-                      href={href}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                        active
-                          ? "bg-gray-700 text-white"
-                          : "text-gray-400 hover:bg-gray-800 hover:text-white"
-                      )}
-                    >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      {label}
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">{label}</TooltipContent>
-                </Tooltip>
+                <Link
+                  key={href}
+                  href={href}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                    active
+                      ? "bg-gray-700 text-white"
+                      : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {label}
+                </Link>
               );
             })}
           </div>
-        </TooltipProvider>
       </nav>
 
       {/* User footer */}

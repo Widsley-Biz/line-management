@@ -34,6 +34,7 @@ export default function BillingItemsPage() {
 
   async function load() {
     const res = await fetch("/api/mobile/billing-items");
+    if (!res.ok) return;
     const data = await res.json();
     setItems(data);
   }

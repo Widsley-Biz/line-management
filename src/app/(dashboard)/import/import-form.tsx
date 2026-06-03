@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, FileText, Loader2, Smartphone } from "lucide-react";
+import { Upload, FileText, Loader2, Smartphone, CheckCircle2, AlertTriangle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -36,9 +36,10 @@ interface ImportResult {
   errors: string[];
 }
 
-interface UnknownItem {
-  itemName: string;
-  maxAmount: number;
+interface SoftBankImportResult {
+  success: number;
+  unmatched: string[];
+  errors: string[];
 }
 
 interface ClassifiedItem {
@@ -47,12 +48,9 @@ interface ClassifiedItem {
   continuousImport: boolean;
 }
 
-interface SoftBankImportResult {
-  success: number;
-  unmatched: string[];
-  errors: string[];
-  requiresClassification?: boolean;
-  unknownItems?: UnknownItem[];
+interface SbPreview {
+  billingItems: string[];
+  unknownItems: string[];
 }
 
 export function ImportForm() {
@@ -70,8 +68,9 @@ export function ImportForm() {
     softBank?: SoftBankImportResult;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // 未知課金項目の分類ダイアログ
-  const [unknownItems, setUnknownItems] = useState<UnknownItem[]>([]);
+
+  // SoftBank課金項目確認ダイアログ
+  const [sbPreview, setSbPreview] = useState<SbPreview | null>(null);
   const [classifications, setClassifications] = useState<ClassifiedItem[]>([]);
 
   const parseAdjustOneCsv = (text: string): PreviewRow[] => {
@@ -106,12 +105,10 @@ export function ImportForm() {
     });
   };
 
-  // SoftBank Excelファイルのプレビュー（クライアント側では件数のみ表示）
   const handleSoftBankFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
     if (!file) return;
     setSoftBankFile(file);
-    // Excelはクライアントでパースしないのでファイル名だけ表示
     setSoftBankPreview([]);
   };
 
@@ -139,37 +136,67 @@ export function ImportForm() {
     reader.readAsText(file, "UTF-8");
   };
 
-  const runImport = async (classifiedItems?: ClassifiedItem[]) => {
+  const handleImport = async () => {
     if (!yearMonth) { setError("対象年月を入力してください"); return; }
     if (!adjustOneFile && !proDelightFile && !softBankFile) { setError("CSVファイルを選択してください"); return; }
 
+    setError(null);
+
+    // SoftBankファイルがある場合、先に課金項目プレビューを取得してダイアログ表示
+    if (softBankFile) {
+      setLoading(true);
+      try {
+        const fd = new FormData();
+        fd.append("yearMonth", yearMonth);
+        fd.append("softBank", softBankFile);
+        fd.append("previewOnly", "true");
+
+        const res = await fetch("/api/billing/import", { method: "POST", body: fd });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setError(data.error ?? "プレビューの取得に失敗しました");
+          return;
+        }
+
+        const preview: SbPreview = data.softBank?.preview ?? { billingItems: [], unknownItems: [] };
+        setSbPreview(preview);
+        setClassifications(
+          preview.unknownItems.map((name) => ({ itemName: name, isBillable: true, continuousImport: true }))
+        );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "エラーが発生しました");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // SoftBankなし（IP回線のみ）はそのまま取込
+    await runActualImport();
+  };
+
+  const runActualImport = async (classifiedItems?: ClassifiedItem[]) => {
     setLoading(true);
     setError(null);
     setResult(null);
 
     try {
-      const formData = new FormData();
-      formData.append("yearMonth", yearMonth);
-      if (adjustOneFile) formData.append("adjustOne", adjustOneFile);
-      if (proDelightFile) formData.append("proDelight", proDelightFile);
+      const fd = new FormData();
+      fd.append("yearMonth", yearMonth);
+      if (adjustOneFile) fd.append("adjustOne", adjustOneFile);
+      if (proDelightFile) fd.append("proDelight", proDelightFile);
       if (softBankFile) {
-        formData.append("softBank", softBankFile);
+        fd.append("softBank", softBankFile);
         if (classifiedItems) {
-          formData.append("newItemClassifications", JSON.stringify(classifiedItems));
+          fd.append("newItemClassifications", JSON.stringify(classifiedItems));
         }
       }
 
-      const res = await fetch("/api/billing/import", { method: "POST", body: formData });
+      const res = await fetch("/api/billing/import", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "インポートに失敗しました");
-      } else if (data.softBank?.requiresClassification) {
-        // 未知項目が検出された → 分類ダイアログを表示
-        const items: UnknownItem[] = data.softBank.unknownItems ?? [];
-        setUnknownItems(items);
-        setClassifications(
-          items.map((item) => ({ itemName: item.itemName, isBillable: true, continuousImport: true }))
-        );
       } else {
         setResult(data);
       }
@@ -180,74 +207,92 @@ export function ImportForm() {
     }
   };
 
-  const handleImport = () => runImport();
-
-  const handleClassifyAndImport = () => {
-    setUnknownItems([]);
-    runImport(classifications);
+  const handleConfirmImport = () => {
+    setSbPreview(null);
+    runActualImport(classifications.length > 0 ? classifications : undefined);
   };
 
   return (
     <div className="space-y-6 max-w-4xl">
-      {/* 未知課金項目の分類ダイアログ */}
-      <Dialog open={unknownItems.length > 0} onOpenChange={(o) => { if (!o) setUnknownItems([]); }}>
-        <DialogContent className="max-w-2xl">
+      {/* SoftBank課金項目確認ダイアログ */}
+      <Dialog open={!!sbPreview} onOpenChange={(o) => { if (!o) setSbPreview(null); }}>
+        <DialogContent className="w-[90vw] max-w-[90vw] max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>新規課金項目が検出されました</DialogTitle>
+            <DialogTitle>SoftBank取込内容の確認</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-gray-600 mb-3">
-            CSVに既存マスタにない項目が含まれています。各項目の扱いを選択してください。
-          </p>
-          <div className="space-y-3 max-h-96 overflow-y-auto">
-            {unknownItems.map((item, idx) => {
-              const cls = classifications[idx] ?? { isBillable: true, continuousImport: true };
-              return (
-                <div key={item.itemName} className="p-3 border rounded-lg space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{item.itemName}</p>
-                      <p className="text-xs text-gray-400">最大金額 ¥{item.maxAmount.toLocaleString()}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setClassifications((prev) => prev.map((c, i) => i === idx ? { ...c, isBillable: true } : c))}
-                        className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${cls.isBillable ? "bg-primary text-primary-foreground border-primary" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}
-                      >
-                        課金
-                      </button>
-                      <button
-                        onClick={() => setClassifications((prev) => prev.map((c, i) => i === idx ? { ...c, isBillable: false } : c))}
-                        className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${!cls.isBillable ? "bg-gray-700 text-white border-gray-700" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}
-                      >
-                        非課金
-                      </button>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setClassifications((prev) => prev.map((c, i) => i === idx ? { ...c, continuousImport: true } : c))}
-                        className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${cls.continuousImport ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}
-                      >
-                        継続取込
-                      </button>
-                      <button
-                        onClick={() => setClassifications((prev) => prev.map((c, i) => i === idx ? { ...c, continuousImport: false } : c))}
-                        className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${!cls.continuousImport ? "bg-amber-500 text-white border-amber-500" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}
-                      >
-                        今回のみ
-                      </button>
-                    </div>
+
+          {/* 課金項目一覧 */}
+          <div className="space-y-4 overflow-y-auto flex-1 pr-1">
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                課金項目（超過金額に加算されます）
+              </p>
+              {sbPreview && sbPreview.billingItems.length === 0 ? (
+                <p className="text-xs text-gray-400 pl-5">課金項目なし</p>
+              ) : (
+                <div className="overflow-x-auto pl-5">
+                  <div className="space-y-1">
+                  {sbPreview?.billingItems.map((name) => (
+                    <p key={name} className="text-sm text-gray-700 whitespace-nowrap">・{name}</p>
+                  ))}
                   </div>
                 </div>
-              );
-            })}
+              )}
+            </div>
+
+            {/* マスタ未登録項目 */}
+            {sbPreview && sbPreview.unknownItems.length > 0 && (
+              <div className="border-t pt-4">
+                <p className="text-sm font-semibold text-amber-700 mb-1 flex items-center gap-1">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  マスタ未登録項目 — 課金区分を選択してください
+                </p>
+                <p className="text-xs text-gray-500 mb-3 pl-5">
+                  選択後、課金項目マスタに自動登録されます
+                </p>
+                <div className="space-y-2 pl-5">
+                  {classifications.map((cls, idx) => (
+                    <div key={cls.itemName} className="p-3 border rounded-lg space-y-2 bg-amber-50">
+                      <p className="text-sm font-medium text-gray-800 whitespace-nowrap">{cls.itemName}</p>
+                      <div className="flex gap-4">
+                        <div className="flex gap-1.5">
+                          {[{ label: "課金", val: true }, { label: "非課金", val: false }].map(({ label, val }) => (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() => setClassifications((prev) => prev.map((c, i) => i === idx ? { ...c, isBillable: val } : c))}
+                              className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${cls.isBillable === val ? (val ? "bg-primary text-primary-foreground border-primary" : "bg-gray-700 text-white border-gray-700") : "bg-white text-gray-500 border-gray-300 hover:bg-gray-50"}`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-1.5">
+                          {[{ label: "継続取込", val: true }, { label: "今回のみ", val: false }].map(({ label, val }) => (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() => setClassifications((prev) => prev.map((c, i) => i === idx ? { ...c, continuousImport: val } : c))}
+                              className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${cls.continuousImport === val ? (val ? "bg-blue-600 text-white border-blue-600" : "bg-amber-500 text-white border-amber-500") : "bg-white text-gray-500 border-gray-300 hover:bg-gray-50"}`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setUnknownItems([])}>キャンセル</Button>
-            <Button onClick={handleClassifyAndImport} disabled={loading}>
+            <Button variant="outline" onClick={() => setSbPreview(null)} disabled={loading}>キャンセル</Button>
+            <Button onClick={handleConfirmImport} disabled={loading}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              確認して取込
+              確認してインポート
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -403,7 +448,7 @@ export function ImportForm() {
                 ✓ <span className="font-medium">{softBankFile.name}</span> が選択されました
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                インポート実行時に超過11項目を自動集計し、電話番号で取引先と紐付けします
+                インポート実行時に課金項目を確認してからインポートします
               </p>
             </div>
           )}

@@ -22,7 +22,6 @@ interface ImportResult {
 
 interface UnknownItem {
   itemName: string;
-  maxAmount: number;
 }
 
 interface ClassifiedItem {
@@ -32,8 +31,10 @@ interface ClassifiedItem {
 }
 
 type SoftBankResult = ImportResult & {
-  requiresClassification?: boolean;
-  unknownItems?: UnknownItem[];
+  preview?: {
+    billingItems: string[];
+    unknownItems: string[];
+  };
 };
 
 async function importAdjustOne(
@@ -247,8 +248,10 @@ async function importSoftBank(
   buffer: ArrayBuffer,
   yearMonth: string,
   isCSV: boolean,
-  newItemClassifications?: ClassifiedItem[]
+  options: { previewOnly?: boolean; newItemClassifications?: ClassifiedItem[] } = {}
 ): Promise<SoftBankResult> {
+  const { previewOnly = false, newItemClassifications } = options;
+
   // DB から継続取込=true の課金項目マスタを取得（項目名をキーに）
   const dbItems = await db
     .select()
@@ -259,7 +262,6 @@ async function importSoftBank(
   const itemMap = new Map<string, ItemEntry>(
     dbItems.map((i) => [i.itemName, { isBillable: i.isBillable }])
   );
-  // 今回分類された項目もマップに追加（継続/今回のみ問わず）
   if (newItemClassifications) {
     for (const cls of newItemClassifications) {
       itemMap.set(cls.itemName, { isBillable: cls.isBillable });
@@ -287,8 +289,11 @@ async function importSoftBank(
     if (lines.length > 0) {
       headerRow = [null, ...parseCsvLine(lines[0])];
     }
-    for (const line of lines.slice(2)) {
-      dataRows.push([null, ...parseCsvLine(line)]);
+    // プレビューモードはヘッダー行（1行目）のみ使用
+    if (!previewOnly) {
+      for (const line of lines.slice(2)) {
+        dataRows.push([null, ...parseCsvLine(line)]);
+      }
     }
   } else {
     const ExcelJS = (await import("exceljs")).default;
@@ -301,7 +306,10 @@ async function importSoftBank(
         headerRow = row.values as (string | number | null | undefined)[];
       }
       if (rowNumber <= 2) return;
-      dataRows.push(row.values as (string | number | null | undefined)[]);
+      // プレビューモードはヘッダー行（1行目）のみ使用
+      if (!previewOnly) {
+        dataRows.push(row.values as (string | number | null | undefined)[]);
+      }
     });
   }
 
@@ -314,6 +322,21 @@ async function importSoftBank(
     if (itemMap.has(h) || isBillingHeader(h)) {
       colNameMap.set(i, h);
     }
+  }
+
+  // プレビューモード：ヘッダーから課金項目・未登録項目を返すだけ（DB書込なし）
+  if (previewOnly) {
+    const billingItems: string[] = [];
+    const unknownItems: string[] = [];
+    for (const [, itemName] of colNameMap) {
+      const dbItem = itemMap.get(itemName);
+      if (dbItem !== undefined) {
+        if (dbItem.isBillable) billingItems.push(itemName);
+      } else {
+        unknownItems.push(itemName);
+      }
+    }
+    return { success: 0, unmatched: [], errors: [], preview: { billingItems, unknownItems } };
   }
 
   // データ行を処理
@@ -362,16 +385,7 @@ async function importSoftBank(
     tenantOverage.set(tenantId, (tenantOverage.get(tenantId) ?? 0) + overageSum);
   }
 
-  // 未知項目が見つかり、かつ分類が未提供 → フロントに返して分類を要求
-  const unknownItems: UnknownItem[] = Array.from(unknownNames.entries()).map(([itemName, maxAmount]) => ({
-    itemName,
-    maxAmount,
-  }));
-  if (unknownItems.length > 0 && !newItemClassifications) {
-    return { success: 0, unmatched: [], errors: [], requiresClassification: true, unknownItems };
-  }
-
-  // 継続取込=true の新規項目を DB に保存
+  // 分類済みの新規項目を DB に保存（継続取込のみ）
   if (newItemClassifications) {
     const now2 = new Date().toISOString();
     for (const cls of newItemClassifications) {
@@ -497,9 +511,12 @@ export async function POST(req: NextRequest) {
     if (softBankFile) {
       const buffer = await softBankFile.arrayBuffer();
       const isCSV = softBankFile.name.toLowerCase().endsWith(".csv");
+      const previewOnly = formData.get("previewOnly") === "true";
       const classificationsJson = formData.get("newItemClassifications") as string | null;
-      const classifications = classificationsJson ? (JSON.parse(classificationsJson) as ClassifiedItem[]) : undefined;
-      result.softBank = await importSoftBank(buffer, yearMonth, isCSV, classifications);
+      const newItemClassifications = classificationsJson
+        ? (JSON.parse(classificationsJson) as ClassifiedItem[])
+        : undefined;
+      result.softBank = await importSoftBank(buffer, yearMonth, isCSV, { previewOnly, newItemClassifications });
     }
 
     return NextResponse.json(result);

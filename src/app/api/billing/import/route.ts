@@ -4,12 +4,12 @@ import {
   callLogs,
   tenants,
   phoneNumbers,
-  mobileLines,
   mobileUsages,
   mobileUsageDetails,
   mobileBillingItems,
+  mobileImportUnmatched,
 } from "@/lib/db/schema";
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { calculateMonthlyBilling } from "@/lib/billing";
 import { logActivity } from "@/lib/audit";
@@ -268,16 +268,13 @@ async function importSoftBank(
     }
   }
 
-  const lineRows = await db
-    .select({ phoneNumber: mobileLines.phoneNumber, tenantId: mobileLines.tenantId })
-    .from(mobileLines)
-    .where(eq(mobileLines.status, "契約中"));
-
-  const phoneToTenant = new Map<string, string>();
-  for (const row of lineRows) {
-    phoneToTenant.set(row.phoneNumber, row.tenantId);
-    phoneToTenant.set(row.phoneNumber.replace(/-/g, ""), row.tenantId);
-  }
+  // 氏名 → 取引先マッピング（回線マスタ不要）
+  const allTenants = await db
+    .select({ id: tenants.id, companyName: tenants.companyName })
+    .from(tenants);
+  const nameToTenant = new Map<string, string>(
+    allTenants.map((t) => [t.companyName.trim(), t.id])
+  );
 
   // ヘッダ行・データ行をバッファ
   let headerRow: (string | number | null | undefined)[] = [];
@@ -342,23 +339,40 @@ async function importSoftBank(
   // データ行を処理
   const tenantOverage = new Map<string, number>();
   const tenantLines = new Map<string, Set<string>>();
-  const unmatched = new Set<string>();
   const detailMap = new Map<string, Map<string, Array<{ itemName: string; amount: number }>>>();
   const unknownNames = new Map<string, number>(); // itemName → maxAmount
 
-  for (const values of dataRows) {
-    const rawPhone = String(values[3] ?? "").trim();
-    if (!rawPhone) continue;
+  // 未照合: rawName → { rawName, phoneNumber, overageTotal, items }
+  type UnmatchedEntry = { rawName: string; phoneNumber: string; overageTotal: number; items: Record<string, number> };
+  const unmatchedMap = new Map<string, UnmatchedEntry>();
 
-    const tenantId =
-      phoneToTenant.get(rawPhone) ?? phoneToTenant.get(rawPhone.replace(/-/g, ""));
+  for (const values of dataRows) {
+    const rawName = String(values[2] ?? "").trim(); // 氏名（col[2]）
+    const rawPhone = String(values[3] ?? "").trim(); // 電話番号（col[3]）
+    if (!rawName && !rawPhone) continue;
+
+    const tenantId = nameToTenant.get(rawName);
     if (!tenantId) {
-      unmatched.add(rawPhone);
+      // 未照合行を集計
+      if (!unmatchedMap.has(rawName)) {
+        unmatchedMap.set(rawName, { rawName, phoneNumber: rawPhone, overageTotal: 0, items: {} });
+      }
+      const entry = unmatchedMap.get(rawName)!;
+      for (const [colIdx, itemName] of colNameMap) {
+        const raw = values[colIdx];
+        const val = typeof raw === "number" ? raw : parseFloat(String(raw ?? "")) || 0;
+        if (val <= 0) continue;
+        const dbItem = itemMap.get(itemName);
+        if (dbItem?.isBillable) {
+          entry.overageTotal += val;
+          entry.items[itemName] = (entry.items[itemName] ?? 0) + val;
+        }
+      }
       continue;
     }
 
     if (!tenantLines.has(tenantId)) tenantLines.set(tenantId, new Set());
-    tenantLines.get(tenantId)!.add(rawPhone);
+    tenantLines.get(tenantId)!.add(rawPhone || rawName);
 
     let overageSum = 0;
     for (const [colIdx, itemName] of colNameMap) {
@@ -368,7 +382,6 @@ async function importSoftBank(
 
       const dbItem = itemMap.get(itemName);
       if (dbItem !== undefined) {
-        // 既知項目：課金なら超過に加算
         if (dbItem.isBillable) {
           overageSum += val;
           if (!detailMap.has(tenantId)) detailMap.set(tenantId, new Map());
@@ -377,7 +390,6 @@ async function importSoftBank(
           phoneMap.get(rawPhone)!.push({ itemName, amount: val });
         }
       } else {
-        // 未知項目：名前でトラッキング
         unknownNames.set(itemName, Math.max(unknownNames.get(itemName) ?? 0, val));
       }
     }
@@ -474,13 +486,46 @@ async function importSoftBank(
     success++;
   }
 
+  // 未照合行を DB に保存（pending のみ削除→再挿入、resolved/ignored は保持）
+  if (unmatchedMap.size > 0) {
+    const pendingIds = await db
+      .select({ id: mobileImportUnmatched.id })
+      .from(mobileImportUnmatched)
+      .where(
+        and(
+          eq(mobileImportUnmatched.yearMonth, yearMonth),
+          eq(mobileImportUnmatched.status, "pending")
+        )
+      );
+    if (pendingIds.length > 0) {
+      await db
+        .delete(mobileImportUnmatched)
+        .where(inArray(mobileImportUnmatched.id, pendingIds.map((r) => r.id)));
+    }
+    const unmatchedInserts = Array.from(unmatchedMap.values()).map((entry) => ({
+      id: randomUUID(),
+      yearMonth,
+      rawName: entry.rawName,
+      phoneNumber: entry.phoneNumber || null,
+      overageTotal: entry.overageTotal,
+      itemsJson: JSON.stringify(entry.items),
+      status: "pending" as const,
+      importedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    }));
+    await db.insert(mobileImportUnmatched).values(unmatchedInserts);
+  }
+
+  const unmatchedNames = Array.from(unmatchedMap.keys());
+
   await logActivity({
     actionType: "import",
-    message: `SoftBank ${isCSV ? "CSV" : "Excel"}インポート完了: 成功${success}社、未照合${unmatched.size}件`,
-    afterJson: { success, unmatched: Array.from(unmatched), yearMonth },
+    message: `SoftBank ${isCSV ? "CSV" : "Excel"}インポート完了: 成功${success}社、未照合${unmatchedNames.length}件`,
+    afterJson: { success, unmatched: unmatchedNames, yearMonth },
   });
 
-  return { success, unmatched: Array.from(unmatched), errors: [] };
+  return { success, unmatched: unmatchedNames, errors: [] };
 }
 
 export async function POST(req: NextRequest) {

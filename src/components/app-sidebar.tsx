@@ -18,6 +18,7 @@ import {
   Smartphone,
   Database,
   AlertCircle,
+  FileWarning,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -40,6 +41,7 @@ const mobileItems = [
   { href: "/mobile/master",         label: "回線マスタ",     icon: Database },
   { href: "/mobile/billing",        label: "請求管理",       icon: CreditCard },
   { href: "/mobile/sf-pending",     label: "SF未送信一覧",   icon: AlertCircle },
+  { href: "/mobile/unmatched",      label: "未照合一覧",     icon: FileWarning },
   { href: "/mobile/devices",        label: "契約端末一覧",   icon: Smartphone },
   { href: "/mobile/billing-items",  label: "課金項目マスタ", icon: Settings },
 ];

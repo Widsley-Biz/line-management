@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { auditLogs } from "@/lib/db/schema";
+import { auth } from "@/lib/auth";
 import { randomUUID } from "crypto";
 
 export async function logActivity(params: {
@@ -12,6 +13,12 @@ export async function logActivity(params: {
   afterJson?: object;
 }) {
   try {
+    // userId 未指定時はログイン中ユーザーを自動で記録
+    let userId = params.userId ?? null;
+    if (userId === null && params.userId === undefined) {
+      const session = await auth().catch(() => null);
+      userId = session?.user?.id ?? null;
+    }
     // 日本時間で保存
     const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000)
       .toISOString()
@@ -19,7 +26,7 @@ export async function logActivity(params: {
 
     await db.insert(auditLogs).values({
       id: randomUUID(),
-      userId: params.userId ?? null,
+      userId,
       actionType: params.actionType,
       message: params.message,
       targetTable: params.targetTable ?? null,

@@ -69,15 +69,16 @@ tenants (テナント)
 |------|------|
 | `/` | ダッシュボード（IP・携帯タブ切り替え） |
 | `/billing-accounts` | 請求アカウント一覧・詳細 |
-| `/tenants` | テナント一覧・詳細（CSV一括登録対応） |
+| `/tenants` | 取引先一覧・詳細（CSV一括登録対応） |
 | `/billing` | 月次請求管理（IP回線） |
 | `/unit-ch` | ユニットch管理 |
-| `/import` | CSV/Excelインポート（IP回線・携帯回線） |
+| `/import` | CSV/Excelインポート（IP回線・携帯回線）※SoftBank取込時に課金項目確認ダイアログ表示 |
 | `/activity` | 更新履歴 |
 | `/settings` | ユーザー管理 |
 | `/mobile/master` | 携帯回線マスタ（CSV一括登録・端末回収管理） |
 | `/mobile/billing/[yearMonth]` | 携帯回線 月次請求管理 |
 | `/mobile/devices` | 契約端末一覧（契約期間・端末回収フィルター） |
+| `/mobile/billing-items` | 課金項目マスタ（課金/非課金管理・CSVから一括取込） |
 
 ## npm scripts
 

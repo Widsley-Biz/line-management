@@ -1,11 +1,11 @@
 "use client";
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Trash2, RefreshCw, Plus } from "lucide-react";
+import { Trash2, RefreshCw, Plus, Upload } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,13 @@ type BillingItem = {
   continuousImport: boolean;
 };
 
+type CsvNewItem = {
+  itemName: string;
+  isBillable: boolean;
+  continuousImport: boolean;
+  skip: boolean;
+};
+
 const EMPTY_FORM = { itemName: "", isBillable: true, continuousImport: true };
 
 export default function BillingItemsPage() {
@@ -31,6 +38,9 @@ export default function BillingItemsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [addError, setAddError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [csvNewItems, setCsvNewItems] = useState<CsvNewItem[]>([]);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   async function load() {
     const res = await fetch("/api/mobile/billing-items");
@@ -64,6 +74,48 @@ export default function BillingItemsPage() {
     });
   }
 
+  function handleCsvSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      // ヘッダー行（1行目）のみ読み込み、列名を項目名として扱う
+      const firstLine = (text.split(/\r?\n/)[0] ?? "").trim();
+      const headers = firstLine.split(",").map((h) => h.trim()).filter(Boolean);
+      // 課金・非課金問わず既にマスタにある項目はスキップ
+      const existingNames = new Set(items.map((i) => i.itemName));
+      const newItemNames = [...new Set(headers)].filter((name) => !existingNames.has(name));
+      if (newItemNames.length === 0) {
+        alert("CSVのヘッダー項目はすべてマスタに登録済みです");
+      } else {
+        setCsvNewItems(newItemNames.map((name) => ({ itemName: name, isBillable: true, continuousImport: true, skip: false })));
+      }
+    };
+    reader.readAsText(file, "UTF-8");
+    e.target.value = "";
+  }
+
+  async function handleCsvImport() {
+    setCsvImporting(true);
+    try {
+      for (const item of csvNewItems.filter((c) => !c.skip)) {
+        const res = await fetch("/api/mobile/billing-items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(item),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setItems((prev) => [...prev, data].sort((a, b) => a.itemName.localeCompare(b.itemName, "ja")));
+        }
+      }
+    } finally {
+      setCsvImporting(false);
+      setCsvNewItems([]);
+    }
+  }
+
   function handleAdd() {
     setAddError(null);
     if (!form.itemName.trim()) {
@@ -81,7 +133,7 @@ export default function BillingItemsPage() {
         setAddError(data.error ?? "追加に失敗しました");
         return;
       }
-      setItems((prev) => [...prev, data].sort((a, b) => a.columnIndex - b.columnIndex));
+      setItems((prev) => [...prev, data].sort((a, b) => a.itemName.localeCompare(b.itemName, "ja")));
       setForm(EMPTY_FORM);
       setAddOpen(false);
     });
@@ -93,6 +145,70 @@ export default function BillingItemsPage() {
 
   return (
     <div className="space-y-6">
+      {/* CSV新規項目 分類ダイアログ */}
+      <Dialog open={csvNewItems.length > 0} onOpenChange={(o) => { if (!o) setCsvNewItems([]); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>新規課金項目が検出されました</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600 mb-3">
+            CSVに既存マスタにない項目が含まれています。各項目の扱いを選択してください。
+          </p>
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {csvNewItems.map((item, idx) => (
+              <div key={item.itemName} className={`p-3 border rounded-lg space-y-2 ${item.skip ? "opacity-50" : ""}`}>
+                <p className="text-sm font-medium">{item.itemName}</p>
+                <div className="flex gap-4 flex-wrap">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCsvNewItems((prev) => prev.map((c, i) => i === idx ? { ...c, isBillable: true, skip: false } : c))}
+                      className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${!item.skip && item.isBillable ? "bg-primary text-primary-foreground border-primary" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}
+                    >
+                      課金
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCsvNewItems((prev) => prev.map((c, i) => i === idx ? { ...c, isBillable: false, skip: false } : c))}
+                      className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${!item.skip && !item.isBillable ? "bg-gray-700 text-white border-gray-700" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}
+                    >
+                      非課金
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCsvNewItems((prev) => prev.map((c, i) => i === idx ? { ...c, skip: true } : c))}
+                      className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${item.skip ? "bg-red-100 text-red-700 border-red-300" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}
+                    >
+                      取り込まない
+                    </button>
+                  </div>
+                  {!item.skip && (
+                    <div className="flex gap-2">
+                      {[{ label: "継続取込", val: true }, { label: "今回のみ", val: false }].map(({ label, val }) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => setCsvNewItems((prev) => prev.map((c, i) => i === idx ? { ...c, continuousImport: val } : c))}
+                          className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${item.continuousImport === val ? (val ? "bg-blue-600 text-white border-blue-600" : "bg-amber-500 text-white border-amber-500") : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCsvNewItems([])} disabled={csvImporting}>キャンセル</Button>
+            <Button onClick={handleCsvImport} disabled={csvImporting}>
+              {csvImporting ? "取込中..." : `確認して取込 (${csvNewItems.filter((c) => !c.skip).length}件)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
         <DialogContent>
           <DialogHeader>
@@ -179,6 +295,17 @@ export default function BillingItemsPage() {
             <RefreshCw className="h-4 w-4 mr-1" />
             更新
           </Button>
+          <Button variant="outline" size="sm" onClick={() => csvInputRef.current?.click()}>
+            <Upload className="h-4 w-4 mr-1" />
+            CSVから取込
+          </Button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,.txt"
+            className="hidden"
+            onChange={handleCsvSelect}
+          />
           <Button size="sm" onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4 mr-1" />
             新規追加

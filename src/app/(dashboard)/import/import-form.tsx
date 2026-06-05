@@ -42,12 +42,6 @@ interface SoftBankImportResult {
   errors: string[];
 }
 
-interface ClassifiedItem {
-  itemName: string;
-  isBillable: boolean;
-  continuousImport: boolean;
-}
-
 interface SbPreview {
   billingItems: string[];
   unknownItems: string[];
@@ -71,7 +65,6 @@ export function ImportForm() {
 
   // SoftBank課金項目確認ダイアログ
   const [sbPreview, setSbPreview] = useState<SbPreview | null>(null);
-  const [classifications, setClassifications] = useState<ClassifiedItem[]>([]);
 
   const parseAdjustOneCsv = (text: string): PreviewRow[] => {
     const lines = text.split("\n").filter((l) => l.trim());
@@ -161,9 +154,6 @@ export function ImportForm() {
 
         const preview: SbPreview = data.softBank?.preview ?? { billingItems: [], unknownItems: [] };
         setSbPreview(preview);
-        setClassifications(
-          preview.unknownItems.map((name) => ({ itemName: name, isBillable: true, continuousImport: true }))
-        );
       } catch (e) {
         setError(e instanceof Error ? e.message : "エラーが発生しました");
       } finally {
@@ -176,7 +166,7 @@ export function ImportForm() {
     await runActualImport();
   };
 
-  const runActualImport = async (classifiedItems?: ClassifiedItem[]) => {
+  const runActualImport = async () => {
     setLoading(true);
     setError(null);
     setResult(null);
@@ -186,12 +176,7 @@ export function ImportForm() {
       fd.append("yearMonth", yearMonth);
       if (adjustOneFile) fd.append("adjustOne", adjustOneFile);
       if (proDelightFile) fd.append("proDelight", proDelightFile);
-      if (softBankFile) {
-        fd.append("softBank", softBankFile);
-        if (classifiedItems) {
-          fd.append("newItemClassifications", JSON.stringify(classifiedItems));
-        }
-      }
+      if (softBankFile) fd.append("softBank", softBankFile);
 
       const res = await fetch("/api/billing/import", { method: "POST", body: fd });
       const data = await res.json();
@@ -209,8 +194,11 @@ export function ImportForm() {
 
   const handleConfirmImport = () => {
     setSbPreview(null);
-    runActualImport(classifications.length > 0 ? classifications : undefined);
+    runActualImport();
   };
+
+  // マスタ未登録項目があるか（ある場合はインポート不可）
+  const hasUnknownItems = (sbPreview?.unknownItems.length ?? 0) > 0;
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -241,59 +229,46 @@ export function ImportForm() {
               )}
             </div>
 
-            {/* マスタ未登録項目 */}
-            {sbPreview && sbPreview.unknownItems.length > 0 && (
+            {/* マスタ未登録項目（インポート不可） */}
+            {hasUnknownItems && (
               <div className="border-t pt-4">
-                <p className="text-sm font-semibold text-amber-700 mb-1 flex items-center gap-1">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  マスタ未登録項目 — 課金区分を選択してください
+                <p className="text-sm font-semibold text-red-700 mb-1 flex items-center gap-1">
+                  <AlertTriangle className="h-4 w-4 text-red-500" />
+                  マスタ未登録の項目があるためインポートできません
                 </p>
-                <p className="text-xs text-gray-500 mb-3 pl-5">
-                  選択後、課金項目マスタに自動登録されます
+                <p className="text-xs text-gray-600 mb-3 pl-5">
+                  課金項目マスタで以下の項目を登録してから、再度インポートしてください
                 </p>
-                <div className="space-y-2 pl-5">
-                  {classifications.map((cls, idx) => (
-                    <div key={cls.itemName} className="p-3 border rounded-lg space-y-2 bg-amber-50">
-                      <p className="text-sm font-medium text-gray-800 whitespace-nowrap">{cls.itemName}</p>
-                      <div className="flex gap-4">
-                        <div className="flex gap-1.5">
-                          {[{ label: "課金", val: true }, { label: "非課金", val: false }].map(({ label, val }) => (
-                            <button
-                              key={label}
-                              type="button"
-                              onClick={() => setClassifications((prev) => prev.map((c, i) => i === idx ? { ...c, isBillable: val } : c))}
-                              className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${cls.isBillable === val ? (val ? "bg-primary text-primary-foreground border-primary" : "bg-gray-700 text-white border-gray-700") : "bg-white text-gray-500 border-gray-300 hover:bg-gray-50"}`}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="flex gap-1.5">
-                          {[{ label: "継続取込", val: true }, { label: "今回のみ", val: false }].map(({ label, val }) => (
-                            <button
-                              key={label}
-                              type="button"
-                              onClick={() => setClassifications((prev) => prev.map((c, i) => i === idx ? { ...c, continuousImport: val } : c))}
-                              className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${cls.continuousImport === val ? (val ? "bg-blue-600 text-white border-blue-600" : "bg-amber-500 text-white border-amber-500") : "bg-white text-gray-500 border-gray-300 hover:bg-gray-50"}`}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                <div className="space-y-1 pl-5 mb-3">
+                  {sbPreview?.unknownItems.map((name) => (
+                    <p key={name} className="text-sm text-red-800 whitespace-nowrap bg-red-50 border border-red-200 rounded px-3 py-1.5">
+                      ・{name}
+                    </p>
                   ))}
+                </div>
+                <div className="pl-5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open("/mobile/billing-items", "_blank", "noopener,noreferrer")}
+                  >
+                    課金項目マスタを開く
+                  </Button>
                 </div>
               </div>
             )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSbPreview(null)} disabled={loading}>キャンセル</Button>
-            <Button onClick={handleConfirmImport} disabled={loading}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              確認してインポート
+            <Button variant="outline" onClick={() => setSbPreview(null)} disabled={loading}>
+              {hasUnknownItems ? "閉じる" : "キャンセル"}
             </Button>
+            {!hasUnknownItems && (
+              <Button onClick={handleConfirmImport} disabled={loading}>
+                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                確認してインポート
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

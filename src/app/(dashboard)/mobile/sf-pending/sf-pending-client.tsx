@@ -88,6 +88,7 @@ export function SfPendingClient({ rows }: { rows: PendingRow[] }) {
   }
 
   async function handleSend(usageId: string) {
+    setSendResults((prev) => { const next = { ...prev }; delete next[usageId]; return next; });
     setSending(usageId);
     try {
       const res = await fetch("/api/mobile/send-sf", {
@@ -281,7 +282,22 @@ export function SfPendingClient({ rows }: { rows: PendingRow[] }) {
                             {sendResults[r.id] === "ok" ? (
                               <span className="text-xs text-green-600 font-medium">✓ 送信完了</span>
                             ) : sendResults[r.id] === "error" ? (
-                              <span className="text-xs text-red-600">送信失敗</span>
+                              <div className="flex flex-col items-end gap-1">
+                                <span className="text-xs text-red-600">送信失敗</span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleSend(r.id)}
+                                  disabled={sending === r.id}
+                                  className="h-7 text-xs border-red-300 text-red-600 hover:bg-red-50"
+                                >
+                                  {sending === r.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <><Send className="h-3 w-3 mr-1" />再送信</>
+                                  )}
+                                </Button>
+                              </div>
                             ) : r.sfOpportunityId && r.overageTotal > 0 ? (
                               <Button
                                 size="sm"

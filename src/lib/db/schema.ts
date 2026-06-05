@@ -402,6 +402,25 @@ export const mobileBillingItems = sqliteTable("mobile_billing_items", {
 });
 
 // ============================================================
+// Mobile Import Unmatched（SoftBank取込未照合行）
+// ============================================================
+export const mobileImportUnmatched = sqliteTable("mobile_import_unmatched", {
+  id: text("id").primaryKey(),
+  yearMonth: text("year_month").notNull(),
+  rawName: text("raw_name").notNull(),
+  phoneNumber: text("phone_number"),
+  overageTotal: real("overage_total").notNull().default(0),
+  itemsJson: text("items_json").notNull().default("{}"),
+  status: text("status", { enum: ["pending", "resolved", "ignored"] })
+    .notNull()
+    .default("pending"),
+  resolvedTenantId: text("resolved_tenant_id").references(() => tenants.id),
+  importedAt: text("imported_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+});
+
+// ============================================================
 // Audit Logs（監査ログ）
 // ============================================================
 export const auditLogs = sqliteTable("audit_logs", {

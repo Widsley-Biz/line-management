@@ -48,6 +48,7 @@ export function MobileBillingClient({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [excludeChecked, setExcludeChecked] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [itemName, setItemName] = useState("");
@@ -72,9 +73,11 @@ export function MobileBillingClient({
   const pendingCount = pendingRows.length;
 
   const baseRows = tab === "under500" ? under500Rows : rows;
-  const filtered = baseRows.filter((r) =>
-    !search || r.companyName.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = baseRows.filter((r) => {
+    if (search && !r.companyName.toLowerCase().includes(search.toLowerCase())) return false;
+    if (statusFilter && r.sfStatus !== statusFilter) return false;
+    return true;
+  });
 
   // 全件タブのチェックボックス（SF送信用）
   function toggleCheck(id: string) {
@@ -372,6 +375,18 @@ export function MobileBillingClient({
                 className="w-full pl-4 pr-4 h-9 rounded-lg border border-input bg-background text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-9 rounded-lg border border-input bg-background px-3 text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">ステータス：全件</option>
+              <option value="未送信">未送信</option>
+              <option value="エラー">エラー</option>
+              <option value="送信済">送信済</option>
+              <option value="超過なし">超過なし</option>
+              <option value="対応不要">対応不要</option>
+            </select>
             <a
               href={"/api/mobile/export?yearMonth=" + yearMonth + "&type=summary"}
               className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-input bg-background text-sm text-gray-600 hover:bg-gray-50 whitespace-nowrap"

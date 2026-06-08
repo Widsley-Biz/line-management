@@ -20,16 +20,6 @@ interface ImportResult {
   errors: string[];
 }
 
-interface UnknownItem {
-  itemName: string;
-}
-
-interface ClassifiedItem {
-  itemName: string;
-  isBillable: boolean;
-  continuousImport: boolean;
-}
-
 type SoftBankResult = ImportResult & {
   preview?: {
     billingItems: string[];
@@ -237,36 +227,27 @@ function parseCsvLine(line: string): string[] {
 }
 
 // ── SoftBank インポート（Excel / CSV 自動判別）──────────────────────────────
-// 課金項目と判断するヘッダキーワード
-const BILLING_HEADER_KEYWORDS = ["料", "代行分", "その他　"];
-
-function isBillingHeader(header: string): boolean {
-  return BILLING_HEADER_KEYWORDS.some((kw) => header.includes(kw));
-}
-
 async function importSoftBank(
   buffer: ArrayBuffer,
   yearMonth: string,
   isCSV: boolean,
-  options: { previewOnly?: boolean; newItemClassifications?: ClassifiedItem[] } = {}
+  options: { previewOnly?: boolean } = {}
 ): Promise<SoftBankResult> {
-  const { previewOnly = false, newItemClassifications } = options;
+  const { previewOnly = false } = options;
 
-  // DB から継続取込=true の課金項目マスタを取得（項目名をキーに）
-  const dbItems = await db
-    .select()
-    .from(mobileBillingItems)
-    .where(eq(mobileBillingItems.continuousImport, true));
+  // DB から課金項目マスタを全件取得（項目名をキーに）
+  const dbItems = await db.select().from(mobileBillingItems);
 
+  // マスタ登録済み項目名（未登録判定用）
+  const knownNames = new Set<string>(dbItems.map((i) => i.itemName));
+
+  // 集計対象は継続取込=true の項目のみ
   type ItemEntry = { isBillable: boolean };
   const itemMap = new Map<string, ItemEntry>(
-    dbItems.map((i) => [i.itemName, { isBillable: i.isBillable }])
+    dbItems
+      .filter((i) => i.continuousImport)
+      .map((i) => [i.itemName, { isBillable: i.isBillable }])
   );
-  if (newItemClassifications) {
-    for (const cls of newItemClassifications) {
-      itemMap.set(cls.itemName, { isBillable: cls.isBillable });
-    }
-  }
 
   // 氏名 → 取引先マッピング（回線マスタ不要）
   const allTenants = await db
@@ -311,36 +292,44 @@ async function importSoftBank(
   }
 
   // ヘッダ行から「列インデックス → 項目名」マップを構築
-  // 課金項目候補（DBに登録済み、またはキーワードを含む列）のみ対象
+  // 課金項目マスタとヘッダ名が完全一致した列のみ集計対象（キーワード判定なし）
+  // マスタに存在しないヘッダは未登録項目として収集（インポート不可）
   const colNameMap = new Map<number, string>(); // colIdx → itemName
+  const unknownItems: string[] = [];
   for (let i = 4; i < headerRow.length; i++) {
     const h = String(headerRow[i] ?? "").trim();
     if (!h) continue;
-    if (itemMap.has(h) || isBillingHeader(h)) {
+    if (itemMap.has(h)) {
       colNameMap.set(i, h);
+    } else if (!knownNames.has(h)) {
+      unknownItems.push(h);
     }
   }
 
-  // プレビューモード：ヘッダーから課金項目・未登録項目を返すだけ（DB書込なし）
+  // プレビューモード：完全一致した課金項目と未登録項目を返すだけ（DB書込なし）
   if (previewOnly) {
     const billingItems: string[] = [];
-    const unknownItems: string[] = [];
     for (const [, itemName] of colNameMap) {
-      const dbItem = itemMap.get(itemName);
-      if (dbItem !== undefined) {
-        if (dbItem.isBillable) billingItems.push(itemName);
-      } else {
-        unknownItems.push(itemName);
-      }
+      if (itemMap.get(itemName)?.isBillable) billingItems.push(itemName);
     }
     return { success: 0, unmatched: [], errors: [], preview: { billingItems, unknownItems } };
+  }
+
+  // マスタ未登録項目がある場合はインポートを中止（マスタ登録後に再実行してもらう）
+  if (unknownItems.length > 0) {
+    return {
+      success: 0,
+      unmatched: [],
+      errors: [
+        `マスタ未登録の項目があるためインポートを中止しました。課金項目マスタで登録してから再実行してください: ${unknownItems.join("、")}`,
+      ],
+    };
   }
 
   // データ行を処理
   const tenantOverage = new Map<string, number>();
   const tenantLines = new Map<string, Set<string>>();
   const detailMap = new Map<string, Map<string, Array<{ itemName: string; amount: number }>>>();
-  const unknownNames = new Map<string, number>(); // itemName → maxAmount
 
   // 未照合: rawName → { rawName, phoneNumber, overageTotal, items }
   type UnmatchedEntry = { rawName: string; phoneNumber: string; overageTotal: number; items: Record<string, number> };
@@ -380,41 +369,17 @@ async function importSoftBank(
       const val = typeof raw === "number" ? raw : parseFloat(String(raw ?? "")) || 0;
       if (val <= 0) continue;
 
-      const dbItem = itemMap.get(itemName);
-      if (dbItem !== undefined) {
-        if (dbItem.isBillable) {
-          overageSum += val;
-          if (!detailMap.has(tenantId)) detailMap.set(tenantId, new Map());
-          const phoneMap = detailMap.get(tenantId)!;
-          if (!phoneMap.has(rawPhone)) phoneMap.set(rawPhone, []);
-          phoneMap.get(rawPhone)!.push({ itemName, amount: val });
-        }
-      } else {
-        unknownNames.set(itemName, Math.max(unknownNames.get(itemName) ?? 0, val));
+      // colNameMap はマスタと完全一致した列のみ
+      if (itemMap.get(itemName)?.isBillable) {
+        overageSum += val;
+        if (!detailMap.has(tenantId)) detailMap.set(tenantId, new Map());
+        const phoneMap = detailMap.get(tenantId)!;
+        if (!phoneMap.has(rawPhone)) phoneMap.set(rawPhone, []);
+        phoneMap.get(rawPhone)!.push({ itemName, amount: val });
       }
     }
 
     tenantOverage.set(tenantId, (tenantOverage.get(tenantId) ?? 0) + overageSum);
-  }
-
-  // 分類済みの新規項目を DB に保存（継続取込のみ）
-  if (newItemClassifications) {
-    const now2 = new Date().toISOString();
-    for (const cls of newItemClassifications) {
-      if (!cls.continuousImport) continue;
-      try {
-        await db.insert(mobileBillingItems).values({
-          id: randomUUID(),
-          itemName: cls.itemName,
-          isBillable: cls.isBillable,
-          continuousImport: true,
-          createdAt: now2,
-          updatedAt: now2,
-        });
-      } catch {
-        // 既存レコードは無視
-      }
-    }
   }
 
   const now = new Date().toISOString();
@@ -557,11 +522,7 @@ export async function POST(req: NextRequest) {
       const buffer = await softBankFile.arrayBuffer();
       const isCSV = softBankFile.name.toLowerCase().endsWith(".csv");
       const previewOnly = formData.get("previewOnly") === "true";
-      const classificationsJson = formData.get("newItemClassifications") as string | null;
-      const newItemClassifications = classificationsJson
-        ? (JSON.parse(classificationsJson) as ClassifiedItem[])
-        : undefined;
-      result.softBank = await importSoftBank(buffer, yearMonth, isCSV, { previewOnly, newItemClassifications });
+      result.softBank = await importSoftBank(buffer, yearMonth, isCSV, { previewOnly });
     }
 
     return NextResponse.json(result);

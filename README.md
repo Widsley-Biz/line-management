@@ -40,6 +40,9 @@ npm run db:link-groups
 
 インポート画面（`/import`）からSoftBank Excel（.xlsx）またはCSV（.csv）をアップロード。ファイル形式は自動判別。
 
+- 照合は**氏名（col[2]）→ 取引先名**で行う（回線マスタ不要）
+- 照合できなかった行は未照合一覧（`/mobile/unmatched`）に登録され、後から取引先への紐付け・無視を選択できる
+
 ## データモデル
 
 ```
@@ -79,6 +82,8 @@ tenants (テナント)
 | `/mobile/billing/[yearMonth]` | 携帯回線 月次請求管理 |
 | `/mobile/devices` | 契約端末一覧（契約期間・端末回収フィルター） |
 | `/mobile/billing-items` | 課金項目マスタ（課金/非課金管理・CSVから一括取込） |
+| `/mobile/sf-pending` | SF未送信一覧（全月横断・キーワード絞込・一括「対応不要」） |
+| `/mobile/unmatched` | SoftBank取込 未照合一覧（取引先への紐付け・無視） |
 
 ## npm scripts
 
@@ -88,21 +93,41 @@ tenants (テナント)
 | `npm run build` | プロダクションビルド |
 | `npm run db:seed` | DB初期化 |
 | `npm run db:generate` | Drizzleマイグレーション生成 |
+| `npm run db:migrate` | マイグレーション適用 |
+| `npm run db:studio` | Drizzle Studio（DBブラウザ）起動 |
 | `npm run db:migrate-ad1` | AD1シートCSVインポート |
 | `npm run db:migrate-sf-customers` | SF顧客CSVインポート |
 | `npm run db:link-groups` | チャンネルグループ自動リンク |
 
 ## 環境変数
 
+`.env.example` をコピーして `.env.local` を作成する。
+
 ```
-NEXTAUTH_SECRET=your-secret
+# 認証（必須）
+NEXTAUTH_SECRET=your-secret          # openssl rand -base64 32 で生成
 NEXTAUTH_URL=http://localhost:3000
+
+# データベース（任意・デフォルト lime.db）
 DATABASE_URL=lime.db
+
+# Salesforce連携（IP回線：Username-Password Flow）
 SF_LOGIN_URL=https://login.salesforce.com
 SF_USERNAME=...
 SF_PASSWORD=...
 SF_SECURITY_TOKEN=...
+SF_PRODUCT2_ID_CC01=...
+SF_PRODUCT2_ID_CC02=...
+SF_PRICEBOOK2_ID=...
+
+# Salesforce連携（携帯回線：Client Credentials Flow）
+SF_CLIENT_ID=...
+SF_CLIENT_SECRET=...
+SF_INSTANCE_URL=https://login.salesforce.com
+SF_PRICEBOOK_ENTRY_ID_MOBILE=...
 ```
+
+SF_* はSalesforce送信機能を使う場合のみ必要。未設定でもその他の機能はローカルで動作する。
 
 ## Docker
 

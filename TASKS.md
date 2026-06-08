@@ -62,3 +62,5 @@
 - ✅ BUG-05：サイドバー Tooltip の hydration mismatch を修正（Tooltip を削除し Link に統一）
 - ✅ FEAT-03：SF未送信一覧ページ（`/mobile/sf-pending`）実装 — 全月横断・月別グループ・SF連携なし判定・在庫/社内/デモ等キーワード絞込・一括「対応不要」・個別SF送信
 - ✅ FEAT-CSV：SoftBank取込を氏名→取引先名照合に変更・未照合一覧ページ（`/mobile/unmatched`）追加
+- ✅ BUG-06：マイグレーション 0003・0004 が `meta/_journal.json` 未登録で `db:migrate` にスキップされる問題を修正（`no such table: mobile_import_unmatched` エラーの原因）
+- ✅ DOCS：README・prd.md を実装の最新状態に同期（`/mobile/sf-pending`・`/mobile/unmatched` 追記、環境変数の完全化、`.env.example` 追加）

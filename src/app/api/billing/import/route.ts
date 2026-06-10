@@ -291,9 +291,19 @@ async function importSoftBank(
     });
   }
 
+  // 課金項目らしい列かどうかを判定するキーワード（メタデータ列を除外するため）
+  const BILLING_HEADER_KEYWORDS = [
+    "基本料", "通話料", "通信料", "月額料", "手数料", "情報料",
+    "定額料", "使用料", "代行分", "調整金", "利用料", "その他　",
+    "　無料", "　割引",
+  ];
+  const isBillingHeader = (h: string) =>
+    BILLING_HEADER_KEYWORDS.some((kw) => h.includes(kw));
+
   // ヘッダ行から「列インデックス → 項目名」マップを構築
-  // 課金項目マスタとヘッダ名が完全一致した列のみ集計対象（キーワード判定なし）
-  // マスタに存在しないヘッダは未登録項目として収集（インポート不可）
+  // - マスタ登録済み → colNameMap に追加（集計対象）
+  // - 未登録かつ課金項目らしい → unknownItems に追加（要分類）
+  // - 未登録かつ非課金項目（ICCID, 氏名 etc.）→ 無視
   const colNameMap = new Map<number, string>(); // colIdx → itemName
   const unknownItems: string[] = [];
   for (let i = 4; i < headerRow.length; i++) {
@@ -301,9 +311,10 @@ async function importSoftBank(
     if (!h) continue;
     if (itemMap.has(h)) {
       colNameMap.set(i, h);
-    } else if (!knownNames.has(h)) {
+    } else if (!knownNames.has(h) && isBillingHeader(h)) {
       unknownItems.push(h);
     }
+    // それ以外（ICCID・機種契約番号・氏名・料金プラン名称 等）は無視
   }
 
   // プレビューモード：完全一致した課金項目と未登録項目を返すだけ（DB書込なし）
@@ -330,8 +341,9 @@ async function importSoftBank(
   let nameColIdx = 2; // デフォルト col B
   let phoneColIdx = 3; // デフォルト col C
   const nameKeywords = ["氏名", "利用者", "契約者", "お名前", "ご利用者", "名前"];
-  const phoneKeywords = ["電話番号", "電話", "TEL", "tel", "携帯番号", "番号"];
-  for (let i = 1; i <= 3; i++) {
+  const phoneKeywords = ["電話番号", "電話", "TEL", "tel", "携帯番号"];
+  // 課金項目開始列(=colNameMap/unknownItemsスキャン開始)の手前まで走査
+  for (let i = 1; i <= 12; i++) {
     const h = String(headerRow[i] ?? "").trim();
     if (h && nameKeywords.some((k) => h.includes(k))) nameColIdx = i;
     if (h && phoneKeywords.some((k) => h.includes(k))) phoneColIdx = i;

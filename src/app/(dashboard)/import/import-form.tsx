@@ -222,7 +222,7 @@ export function ImportForm() {
     <div className="space-y-6 max-w-4xl">
       {/* SoftBank課金項目確認ダイアログ */}
       <Dialog open={!!sbPreview} onOpenChange={(o) => { if (!o) setSbPreview(null); }}>
-        <DialogContent className="w-[92vw] max-w-[92vw] max-h-[88vh] flex flex-col">
+        <DialogContent className="w-[92vw] max-w-[92vw] sm:max-w-[92vw] max-h-[88vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>SoftBank取込内容の確認</DialogTitle>
           </DialogHeader>
@@ -258,7 +258,7 @@ export function ImportForm() {
                 <div className="space-y-2">
                   {unknownClassifications.map((item, idx) => (
                     <div
-                      key={item.itemName}
+                      key={idx}
                       className={`rounded-lg border px-3 py-2 ${item.skip ? "opacity-40 bg-gray-50" : "bg-white"}`}
                     >
                       <p className="text-sm text-gray-800 mb-1.5 font-medium">{item.itemName}</p>

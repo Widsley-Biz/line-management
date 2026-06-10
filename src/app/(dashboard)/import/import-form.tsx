@@ -47,6 +47,12 @@ interface SbPreview {
   unknownItems: string[];
 }
 
+type UnknownClassification = {
+  itemName: string;
+  isBillable: boolean;
+  skip: boolean;
+};
+
 export function ImportForm() {
   const [yearMonth, setYearMonth] = useState("");
   const [adjustOneFile, setAdjustOneFile] = useState<File | null>(null);
@@ -65,6 +71,7 @@ export function ImportForm() {
 
   // SoftBank課金項目確認ダイアログ
   const [sbPreview, setSbPreview] = useState<SbPreview | null>(null);
+  const [unknownClassifications, setUnknownClassifications] = useState<UnknownClassification[]>([]);
 
   const parseAdjustOneCsv = (text: string): PreviewRow[] => {
     const lines = text.split("\n").filter((l) => l.trim());
@@ -154,6 +161,9 @@ export function ImportForm() {
 
         const preview: SbPreview = data.softBank?.preview ?? { billingItems: [], unknownItems: [] };
         setSbPreview(preview);
+        setUnknownClassifications(
+          preview.unknownItems.map((name) => ({ itemName: name, isBillable: true, skip: false }))
+        );
       } catch (e) {
         setError(e instanceof Error ? e.message : "エラーが発生しました");
       } finally {
@@ -192,25 +202,33 @@ export function ImportForm() {
     }
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
+    // 未登録項目をマスタに登録（スキップ以外）
+    const toRegister = unknownClassifications.filter((c) => !c.skip);
+    for (const item of toRegister) {
+      await fetch("/api/mobile/billing-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemName: item.itemName, isBillable: item.isBillable, continuousImport: true }),
+      });
+    }
     setSbPreview(null);
     runActualImport();
   };
 
-  // マスタ未登録項目があるか（ある場合はインポート不可）
   const hasUnknownItems = (sbPreview?.unknownItems.length ?? 0) > 0;
 
   return (
     <div className="space-y-6 max-w-4xl">
       {/* SoftBank課金項目確認ダイアログ */}
       <Dialog open={!!sbPreview} onOpenChange={(o) => { if (!o) setSbPreview(null); }}>
-        <DialogContent className="w-[90vw] max-w-[90vw] max-h-[85vh] flex flex-col">
+        <DialogContent className="w-[92vw] max-w-[92vw] sm:max-w-[92vw] max-h-[88vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>SoftBank取込内容の確認</DialogTitle>
           </DialogHeader>
 
-          {/* 課金項目一覧 */}
-          <div className="space-y-4 overflow-y-auto flex-1 pr-1">
+          <div className={`overflow-y-auto flex-1 pr-1 ${hasUnknownItems ? "grid grid-cols-2 gap-6" : ""}`}>
+            {/* 左列: 課金項目一覧 */}
             <div>
               <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
                 <CheckCircle2 className="h-4 w-4 text-green-500" />
@@ -219,41 +237,70 @@ export function ImportForm() {
               {sbPreview && sbPreview.billingItems.length === 0 ? (
                 <p className="text-xs text-gray-400 pl-5">課金項目なし</p>
               ) : (
-                <div className="overflow-x-auto pl-5">
-                  <div className="space-y-1">
+                <div className="space-y-1 pl-5">
                   {sbPreview?.billingItems.map((name) => (
-                    <p key={name} className="text-sm text-gray-700 whitespace-nowrap">・{name}</p>
+                    <p key={name} className="text-sm text-gray-700">・{name}</p>
                   ))}
-                  </div>
                 </div>
               )}
             </div>
 
-            {/* マスタ未登録項目（インポート不可） */}
+            {/* 右列: マスタ未登録項目（課金/非課金を選択して登録） */}
             {hasUnknownItems && (
-              <div className="border-t pt-4">
-                <p className="text-sm font-semibold text-red-700 mb-1 flex items-center gap-1">
-                  <AlertTriangle className="h-4 w-4 text-red-500" />
-                  マスタ未登録の項目があるためインポートできません
+              <div className="border-l pl-6">
+                <p className="text-sm font-semibold text-amber-700 mb-1 flex items-center gap-1">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  マスタ未登録項目 — 区分を選択してください
                 </p>
-                <p className="text-xs text-gray-600 mb-3 pl-5">
-                  課金項目マスタで以下の項目を登録してから、再度インポートしてください
+                <p className="text-xs text-gray-500 mb-3">
+                  選択後「登録してインポート」で一括登録されます。「スキップ」は今回の取込対象から除外されます。
                 </p>
-                <div className="space-y-1 pl-5 mb-3">
-                  {sbPreview?.unknownItems.map((name) => (
-                    <p key={name} className="text-sm text-red-800 whitespace-nowrap bg-red-50 border border-red-200 rounded px-3 py-1.5">
-                      ・{name}
-                    </p>
+                <div className="space-y-2">
+                  {unknownClassifications.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className={`rounded-lg border px-3 py-2 ${item.skip ? "opacity-40 bg-gray-50" : "bg-white"}`}
+                    >
+                      <p className="text-sm text-gray-800 mb-1.5 font-medium">{item.itemName}</p>
+                      <div className="flex gap-1.5">
+                        {[
+                          { label: "課金", value: true, isSkip: false },
+                          { label: "非課金", value: false, isSkip: false },
+                          { label: "スキップ", value: false, isSkip: true },
+                        ].map(({ label, value, isSkip }) => {
+                          const active = isSkip ? item.skip : !item.skip && item.isBillable === value;
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() =>
+                                setUnknownClassifications((prev) =>
+                                  prev.map((c, i) =>
+                                    i === idx
+                                      ? isSkip
+                                        ? { ...c, skip: true }
+                                        : { ...c, isBillable: value, skip: false }
+                                      : c
+                                  )
+                                )
+                              }
+                              className={`px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+                                active
+                                  ? isSkip
+                                    ? "bg-gray-500 text-white border-gray-500"
+                                    : value
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "bg-gray-700 text-white border-gray-700"
+                                  : "bg-white text-gray-500 border-gray-300 hover:bg-gray-50"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ))}
-                </div>
-                <div className="pl-5">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open("/mobile/billing-items", "_blank", "noopener,noreferrer")}
-                  >
-                    課金項目マスタを開く
-                  </Button>
                 </div>
               </div>
             )}
@@ -261,14 +308,12 @@ export function ImportForm() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setSbPreview(null)} disabled={loading}>
-              {hasUnknownItems ? "閉じる" : "キャンセル"}
+              キャンセル
             </Button>
-            {!hasUnknownItems && (
-              <Button onClick={handleConfirmImport} disabled={loading}>
-                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                確認してインポート
-              </Button>
-            )}
+            <Button onClick={handleConfirmImport} disabled={loading}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {hasUnknownItems ? "登録してインポート" : "確認してインポート"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

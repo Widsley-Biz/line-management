@@ -203,13 +203,17 @@ export function ImportForm() {
   };
 
   const handleConfirmImport = async () => {
-    // 未登録項目をマスタに登録（スキップ以外）
-    const toRegister = unknownClassifications.filter((c) => !c.skip);
-    for (const item of toRegister) {
+    setLoading(true);
+    // 未登録項目をすべてマスタに登録（スキップはcontinuousImport:falseで登録して「既知」扱いに）
+    for (const item of unknownClassifications) {
       await fetch("/api/mobile/billing-items", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemName: item.itemName, isBillable: item.isBillable, continuousImport: true }),
+        body: JSON.stringify({
+          itemName: item.itemName,
+          isBillable: item.skip ? false : item.isBillable,
+          continuousImport: !item.skip,
+        }),
       });
     }
     setSbPreview(null);
@@ -529,23 +533,33 @@ export function ImportForm() {
                   <Smartphone className="h-4 w-4 text-blue-600" />
                   SoftBank 携帯回線
                 </p>
-                <div className="flex gap-3">
-                  <Badge variant="default">成功: {result.softBank.success}件</Badge>
-                  {result.softBank.unmatched.length > 0 && (
-                    <Badge variant="secondary">未照合: {result.softBank.unmatched.length}件</Badge>
-                  )}
-                </div>
-                {result.softBank.unmatched.length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-xs font-medium text-amber-700 mb-1">
-                      未照合電話番号（{result.softBank.unmatched.length}件）— マスタ管理で登録してください
-                    </p>
-                    <div className="max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
-                      {result.softBank.unmatched.map((u, i) => (
-                        <p key={i} className="text-xs text-amber-800 font-mono">{u}</p>
-                      ))}
-                    </div>
+                {result.softBank.errors && result.softBank.errors.length > 0 ? (
+                  <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    {result.softBank.errors.map((e, i) => (
+                      <p key={i} className="text-xs text-red-700">{e}</p>
+                    ))}
                   </div>
+                ) : (
+                  <>
+                    <div className="flex gap-3">
+                      <Badge variant="default">成功: {result.softBank.success}件</Badge>
+                      {result.softBank.unmatched.length > 0 && (
+                        <Badge variant="secondary">未照合: {result.softBank.unmatched.length}件</Badge>
+                      )}
+                    </div>
+                    {result.softBank.unmatched.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-xs font-medium text-amber-700 mb-1">
+                          未照合電話番号（{result.softBank.unmatched.length}件）— マスタ管理で登録してください
+                        </p>
+                        <div className="max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
+                          {result.softBank.unmatched.map((u, i) => (
+                            <p key={i} className="text-xs text-amber-800 font-mono">{u}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

@@ -323,17 +323,30 @@ async function importSoftBank(
     for (const [, itemName] of colNameMap) {
       if (itemMap.get(itemName)?.isBillable) billingItems.push(itemName);
     }
-    return { success: 0, unmatched: [], errors: [], preview: { billingItems, unknownItems } };
+    return {
+      success: 0,
+      unmatched: [],
+      errors: [],
+      preview: {
+        billingItems: [...new Set(billingItems)],
+        unknownItems: [...new Set(unknownItems)],
+      },
+    };
   }
 
   // マスタ未登録項目がある場合はインポートを中止（マスタ登録後に再実行してもらう）
   if (unknownItems.length > 0) {
+    const uniqueUnknown = [...new Set(unknownItems)];
+    const errorMsg = `マスタ未登録の項目があるためインポートを中止しました。課金項目マスタで登録してから再実行してください: ${uniqueUnknown.join("、")}`;
+    await logActivity({
+      actionType: "import",
+      message: `SoftBank ${isCSV ? "CSV" : "Excel"}インポート中止: マスタ未登録項目${uniqueUnknown.length}件`,
+      afterJson: { unknownItems: uniqueUnknown, yearMonth },
+    });
     return {
       success: 0,
       unmatched: [],
-      errors: [
-        `マスタ未登録の項目があるためインポートを中止しました。課金項目マスタで登録してから再実行してください: ${unknownItems.join("、")}`,
-      ],
+      errors: [errorMsg],
     };
   }
 
@@ -398,7 +411,13 @@ async function importSoftBank(
         if (!detailMap.has(tenantId)) detailMap.set(tenantId, new Map());
         const phoneMap = detailMap.get(tenantId)!;
         if (!phoneMap.has(rawPhone)) phoneMap.set(rawPhone, []);
-        phoneMap.get(rawPhone)!.push({ itemName, amount: val });
+        const items = phoneMap.get(rawPhone)!;
+        const existing = items.find((d) => d.itemName === itemName);
+        if (existing) {
+          existing.amount += val;
+        } else {
+          items.push({ itemName, amount: val });
+        }
       }
     }
 

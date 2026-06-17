@@ -73,6 +73,7 @@ export default async function BillingMonthPage({
       id: monthlyUsages.id,
       tenantId: monthlyUsages.tenantId,
       companyName: tenants.companyName,
+      sfOpportunityId: tenants.sfOpportunityId,
       totalPackPrice: monthlyUsages.totalPackPrice,
       totalCredit: monthlyUsages.totalCredit,
       ipCallCharge: monthlyUsages.ipCallCharge,

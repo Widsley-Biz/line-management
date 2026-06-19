@@ -20,17 +20,71 @@
 
 ### FEAT-04：ユーザー毎のSF接続ロジック構築
 - **優先度：** 高
-- **概要：** 現在は環境変数のシステム共通SF認証（client_credentials）を使用しているが、ユーザー毎のSFアカウントで接続できる仕組みを構築する
-- **詳細：**
-  - ユーザーごとにSFアカウント情報（アクセストークン or ログイン情報）を保持する仕組みの設計
-  - SFログイン画面またはOAuth連携フロー（SF Connected App経由）の実装
-  - SF送信時に送信ユーザーのアカウントで接続する
-  - トークンの保存方法・有効期限管理の設計（DBへの暗号化保存 or セッション管理）
-  - 接続テスト機能（設定画面から接続確認できる）
-- **検討事項：**
-  - OAuth 2.0 Authorization Code Flow vs Username-Password Flow の選択
-  - トークンリフレッシュ対応が必要か
-  - 既存の `SF_CLIENT_ID` / `SF_CLIENT_SECRET` との併用方針
+- **概要：** 現在はシステム共通のSFシステム管理者アカウント（client_credentials）でSF更新しているが、このシステムのログインユーザーに紐づくSFユーザーで商談を更新できる仕組みを構築する
+
+---
+
+#### 【情シス対応】Salesforce Connected App の設定変更
+
+このシステムからSF送信する際に特定のSFユーザーとして更新するには、  
+現在の Connected App に `refresh_token` スコープの追加とコールバックURLの登録が必要です。
+
+**手順：**
+
+1. SalesforceにシステムA管理者でログイン
+2. 右上の歯車 → **設定（Setup）**
+3. 左の検索に `App Manager` と入力 → **App Manager** を開く
+4. 現在使用している Connected App（`SF_CLIENT_ID` に対応するもの）の行右端 **▼ → 編集**
+5. 「OAuth 設定」セクションで以下を追加：
+
+   | 項目 | 設定値 |
+   |---|---|
+   | 追加スコープ① | `データへのアクセスおよび管理 (api)` |
+   | 追加スコープ② | **`いつでもリクエストを実行 (refresh_token, offline_access)`** ← 必須 |
+   | 追加スコープ③ | `OpenID Connect の基本情報へのアクセス (openid)` |
+   | コールバック URL | `https://[本番ドメイン]/api/auth/sf/callback` を追加 |
+
+6. 保存（反映まで最大10分）
+7. App Manager → Connected App の **「管理」** → 「OAuth ポリシー」を確認：
+
+   | 項目 | 推奨設定 |
+   |---|---|
+   | 許可されているユーザー | `管理者が承認したユーザーは事前承認済み` または `全ユーザーが自己承認可能` |
+   | リフレッシュトークンポリシー | `リフレッシュトークンは失効まで有効` |
+
+8. 設定完了後、以下を開発側に共有：
+   - 変更した Connected App の `クライアントID（Consumer Key）`
+   - `クライアントシークレット（Consumer Secret）`
+   - 本番ドメイン（コールバックURL登録に使用したもの）
+
+> **確認事項：** 現在の Connected App が `client_credentials` 専用の場合、  
+> 「コールバック URL」欄が存在しないことがあります。その場合は新規 Connected App を作成してください。
+
+---
+
+#### 【開発側対応】実装内容
+
+情シスの設定完了後に着手：
+
+1. **このシステムのログイン機能の有効化**
+   - NextAuth.js はコード実装済み（`src/lib/auth.ts`）
+   - ミドルウェアによる認証必須化と、ログイン画面UIの整備
+
+2. **DB変更：usersテーブルにSFトークン保存カラムを追加**
+   ```sql
+   sf_user_id          TEXT  -- SFのUser ID（18桁）
+   sf_access_token     TEXT  -- アクセストークン（暗号化）
+   sf_refresh_token    TEXT  -- リフレッシュトークン（暗号化）★
+   sf_token_expires_at TEXT  -- アクセストークン有効期限
+   sf_instance_url     TEXT  -- 接続先SF URL
+   ```
+
+3. **設定画面にSF連携ボタンを追加**
+   - SF OAuth画面にリダイレクト → 認証後 `/api/auth/sf/callback` でトークン取得・DB保存
+
+4. **SF送信ロジックの変更**（`src/app/api/mobile/send-sf/route.ts` 等）
+   - `getSFConnection()` をセッションユーザーのトークンを使う形に変更
+   - トークン期限切れ時はrefresh_tokenで自動更新
 
 ---
 

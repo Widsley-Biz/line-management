@@ -18,6 +18,7 @@ type Row = {
   id: string;
   tenantId: string;
   companyName: string;
+  sfOpportunityId: string | null;
   totalLines: number;
   overageTotal: number;
   sfStatus: string;
@@ -521,12 +522,28 @@ export function MobileBillingClient({
                           {r.sfSentAt ? r.sfSentAt.slice(0, 16).replace("T", " ") : "—"}
                         </td>
                         <td className="px-4 py-3">
-                          {tab === "all" && isPending && r.overageTotal > 0 && (
-                            <MobileSendSfButton
-                              tenantId={r.tenantId}
-                              yearMonth={yearMonth}
-                            />
-                          )}
+                          <div className="flex items-center gap-2">
+                            {tab === "all" && isPending && r.overageTotal > 0 && (
+                              <MobileSendSfButton
+                                tenantId={r.tenantId}
+                                yearMonth={yearMonth}
+                              />
+                            )}
+                            {r.sfOpportunityId && (
+                              process.env.NEXT_PUBLIC_SF_ORG_URL ? (
+                                <a
+                                  href={`${process.env.NEXT_PUBLIC_SF_ORG_URL}/${r.sfOpportunityId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-blue-600 hover:underline font-mono whitespace-nowrap"
+                                >
+                                  {r.sfOpportunityId} →
+                                </a>
+                              ) : (
+                                <span className="text-xs text-gray-400 font-mono">{r.sfOpportunityId}</span>
+                              )
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

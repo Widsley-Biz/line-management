@@ -40,6 +40,7 @@ export default async function MobileBillingPage({
       id: mobileUsages.id,
       tenantId: mobileUsages.tenantId,
       companyName: tenants.companyName,
+      sfOpportunityId: tenants.sfOpportunityId,
       totalLines: mobileUsages.totalLines,
       overageTotal: mobileUsages.overageTotal,
       sfStatus: mobileUsages.sfStatus,

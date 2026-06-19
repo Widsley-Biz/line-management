@@ -158,6 +158,20 @@ export default async function BillingDetailPage({
                 yearMonth={yearMonth}
               />
             )}
+            {tenant.sfOpportunityId && (
+              process.env.NEXT_PUBLIC_SF_ORG_URL ? (
+                <a
+                  href={`${process.env.NEXT_PUBLIC_SF_ORG_URL}/${tenant.sfOpportunityId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:underline font-mono"
+                >
+                  {tenant.sfOpportunityId} →
+                </a>
+              ) : (
+                <span className="text-xs text-gray-500 font-mono">{tenant.sfOpportunityId}</span>
+              )
+            )}
             {usage.sfStatus === "未送信" && !tenant.sfOpportunityId && (
               <span className="text-xs text-amber-600">SF商談IDが未設定です</span>
             )}

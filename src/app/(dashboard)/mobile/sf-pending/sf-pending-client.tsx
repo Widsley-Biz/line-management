@@ -254,7 +254,18 @@ export function SfPendingClient({ rows }: { rows: PendingRow[] }) {
                           <td className="px-4 py-3 font-mono text-xs text-gray-500">{r.slug}</td>
                           <td className="px-4 py-3">
                             {r.sfOpportunityId ? (
-                              <span className="font-mono text-xs text-gray-500">{r.sfOpportunityId}</span>
+                              process.env.NEXT_PUBLIC_SF_ORG_URL ? (
+                                <a
+                                  href={`${process.env.NEXT_PUBLIC_SF_ORG_URL}/${r.sfOpportunityId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-mono text-xs text-blue-600 hover:underline"
+                                >
+                                  {r.sfOpportunityId} →
+                                </a>
+                              ) : (
+                                <span className="font-mono text-xs text-gray-500">{r.sfOpportunityId}</span>
+                              )
                             ) : (
                               <Badge variant="outline" className="text-gray-400 text-xs border-gray-300">
                                 SF連携なし

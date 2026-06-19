@@ -241,12 +241,9 @@ async function importSoftBank(
   // マスタ登録済み項目名（未登録判定用）
   const knownNames = new Set<string>(dbItems.map((i) => i.itemName));
 
-  // 集計対象は継続取込=true の項目のみ
   type ItemEntry = { isBillable: boolean };
   const itemMap = new Map<string, ItemEntry>(
-    dbItems
-      .filter((i) => i.continuousImport)
-      .map((i) => [i.itemName, { isBillable: i.isBillable }])
+    dbItems.map((i) => [i.itemName, { isBillable: i.isBillable }])
   );
 
   // 氏名 → 取引先マッピング（回線マスタ不要）
@@ -260,6 +257,8 @@ async function importSoftBank(
   // ヘッダ行・データ行をバッファ
   let headerRow: (string | number | null | undefined)[] = [];
   const dataRows: (string | number | null | undefined)[][] = [];
+  // プレビュー用：最初のデータ行（未登録列の数値検出に使用）
+  let firstDataRow: (string | number | null | undefined)[] = [];
 
   if (isCSV) {
     const text = new TextDecoder("utf-8").decode(buffer);
@@ -267,8 +266,12 @@ async function importSoftBank(
     if (lines.length > 0) {
       headerRow = [null, ...parseCsvLine(lines[0])];
     }
-    // プレビューモードはヘッダー行（1行目）のみ使用
-    if (!previewOnly) {
+    if (previewOnly) {
+      // プレビューモードは最初のデータ行（index 2）のみ取得
+      if (lines.length > 2) {
+        firstDataRow = [null, ...parseCsvLine(lines[2])];
+      }
+    } else {
       for (const line of lines.slice(2)) {
         dataRows.push([null, ...parseCsvLine(line)]);
       }
@@ -284,10 +287,12 @@ async function importSoftBank(
         headerRow = row.values as (string | number | null | undefined)[];
       }
       if (rowNumber <= 2) return;
-      // プレビューモードはヘッダー行（1行目）のみ使用
-      if (!previewOnly) {
-        dataRows.push(row.values as (string | number | null | undefined)[]);
+      if (previewOnly) {
+        // プレビューモードは最初のデータ行（row 3）のみ取得
+        if (rowNumber === 3) firstDataRow = row.values as (string | number | null | undefined)[];
+        return;
       }
+      dataRows.push(row.values as (string | number | null | undefined)[]);
     });
   }
 
@@ -319,6 +324,20 @@ async function importSoftBank(
 
   // プレビューモード：完全一致した課金項目と未登録項目を返すだけ（DB書込なし）
   if (previewOnly) {
+    // isBillingHeader では検出できない未登録列（割引列・氏名型の個人別集計列等）を
+    // 最初のデータ行の数値有無で補完検出する。
+    // メタデータ列（ICCID 等）の誤検出を避けるため、既知課金列の最小インデックス以降のみ走査する。
+    if (firstDataRow.length > 0 && colNameMap.size > 0) {
+      const minBillingIdx = Math.min(...colNameMap.keys());
+      for (let i = minBillingIdx; i < headerRow.length; i++) {
+        const h = String(headerRow[i] ?? "").trim();
+        if (!h || knownNames.has(h) || colNameMap.has(i) || unknownItems.includes(h)) continue;
+        const raw = firstDataRow[i];
+        const val = typeof raw === "number" ? raw : parseFloat(String(raw ?? "")) || 0;
+        if (val !== 0) unknownItems.push(h);
+      }
+    }
+
     const billingItems: string[] = [];
     for (const [, itemName] of colNameMap) {
       if (itemMap.get(itemName)?.isBillable) billingItems.push(itemName);

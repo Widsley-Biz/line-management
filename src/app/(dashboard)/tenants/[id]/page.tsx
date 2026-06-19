@@ -243,7 +243,21 @@ export default async function TenantDetailPage({
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <Label htmlFor="sfOpportunityId">SF商談ID</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="sfOpportunityId">SF商談ID</Label>
+                    {tenant.sfOpportunityId && (
+                      process.env.NEXT_PUBLIC_SF_ORG_URL ? (
+                        <a
+                          href={`${process.env.NEXT_PUBLIC_SF_ORG_URL}/${tenant.sfOpportunityId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          SFで開く →
+                        </a>
+                      ) : null
+                    )}
+                  </div>
                   <Input id="sfOpportunityId" name="sfOpportunityId" defaultValue={tenant.sfOpportunityId ?? ""} />
                 </div>
                 <div className="space-y-1">

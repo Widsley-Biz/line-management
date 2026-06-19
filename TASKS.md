@@ -1,29 +1,22 @@
 # 次期タスク一覧
 
-**最終更新：** 2026年6月12日
+**最終更新：** 2026年6月17日
 
 ---
 
 ## 実装待ちタスク
 
-### BUG-07：インポートモーダルの課金項目表示とマスタ一覧の不一致修正
+### BUG-08：SF商談IDリンクが請求管理ページに表示されない
 - **優先度：** 中
-- **概要：** SoftBank取込確認モーダルに表示される「課金項目一覧」と、課金項目マスタ（`/mobile/billing-items`）の表示内容が一致していない
+- **概要：** `NEXT_PUBLIC_SF_ORG_URL` を `.env.local` に設定してもSF商談IDリンクが請求管理一覧・詳細ページに表示されない
 - **調査ポイント：**
-  - モーダルの `billingItems` はインポートCSVヘッダーとマスタの完全一致のみを表示しているが、マスタ画面の表示と比較して差異がないか確認
-  - 課金（`is_billable=true`）フラグの設定が両者で整合しているか確認
-  - 必要に応じてモーダルの表示ロジックを修正
-
-### VERIFY-01：SoftBank CSV取込ロジック変更の検証
-- **優先度：** 高（リリース前に必須）
-- **概要：** 電話番号→回線マスタ照合から氏名→取引先名照合へのロジック変更を実データで検証
-- **検証項目：**
-  - 実際のSoftBank CSV/Excelファイルで取込を実行し、氏名と取引先名が正しく照合されることを確認
-  - 氏名列（col[2]）の実際のフォーマットと取引先名の一致度を確認（完全一致 or 部分一致が必要か判断）
-  - 未照合一覧（`/mobile/unmatched`）に想定外の行が出ていないか確認
-  - 照合済み取引先の `mobileUsages` / `mobileUsageDetails` が正しく作成されているか確認
-  - 既存データ（電話番号照合時代のもの）との整合性確認
-- **備考：** 部分一致が必要な場合はマッチングロジックの追加改修が発生
+  - `billing-table.tsx`（クライアントコンポーネント）で `process.env.NEXT_PUBLIC_SF_ORG_URL` が正しく参照できているか確認
+  - env未設定時のフォールバック（グレーテキスト表示）も出ていないか確認 → 出ていない場合はクエリ or 型定義の問題
+  - dev サーバー再起動後に再確認
+- **対象ファイル：**
+  - `src/components/billing-table.tsx`
+  - `src/app/(dashboard)/billing/[yearMonth]/page.tsx`
+  - `src/app/(dashboard)/billing/[yearMonth]/[tenantId]/page.tsx`
 
 ### FEAT-04：ユーザー毎のSF接続ロジック構築
 - **優先度：** 高
@@ -72,3 +65,6 @@
 - ✅ FEAT-CSV：SoftBank取込を氏名→取引先名照合に変更・未照合一覧ページ（`/mobile/unmatched`）追加
 - ✅ BUG-06：マイグレーション 0003・0004 が `meta/_journal.json` 未登録で `db:migrate` にスキップされる問題を修正（`no such table: mobile_import_unmatched` エラーの原因）
 - ✅ DOCS：README・prd.md を実装の最新状態に同期（`/mobile/sf-pending`・`/mobile/unmatched` 追記、環境変数の完全化、`.env.example` 追加）
+- ✅ BUG-07：インポートモーダルの課金項目表示とマスタ一覧の不一致修正（`continuousImport` フィルター除去・プレビュー時データ行スキャンで未検出項目を補完）
+- ✅ VERIFY-01：SoftBank CSV取込ロジック変更（氏名→取引先名照合）の検証完了 — 複数月の実データで照合・mobileUsages/mobileUsageDetails 正常生成確認済み
+- ✅ FEAT-05：SF商談IDリンク実装（取引先詳細・請求管理一覧・請求詳細・SF未送信一覧）— `NEXT_PUBLIC_SF_ORG_URL` 設定時はリンク、未設定時はテキスト表示

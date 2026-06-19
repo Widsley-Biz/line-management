@@ -10,6 +10,7 @@ type BillingRow = {
   id: string;
   tenantId: string;
   companyName: string;
+  sfOpportunityId: string | null;
   totalPackPrice: number;
   totalCredit: number;
   ipCallCharge: number;
@@ -133,12 +134,28 @@ export function BillingTable({ rows, yearMonth }: { rows: BillingRow[]; yearMont
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
-                  {r.sfStatus === "未送信" && (
-                    <SendSfButton
-                      tenants={[{ tenantId: r.tenantId, companyName: r.companyName }]}
-                      yearMonth={yearMonth}
-                    />
-                  )}
+                  <div className="flex items-center gap-2">
+                    {r.sfStatus === "未送信" && (
+                      <SendSfButton
+                        tenants={[{ tenantId: r.tenantId, companyName: r.companyName }]}
+                        yearMonth={yearMonth}
+                      />
+                    )}
+                    {r.sfOpportunityId && (
+                      process.env.NEXT_PUBLIC_SF_ORG_URL ? (
+                        <a
+                          href={`${process.env.NEXT_PUBLIC_SF_ORG_URL}/${r.sfOpportunityId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:underline font-mono whitespace-nowrap"
+                        >
+                          {r.sfOpportunityId} →
+                        </a>
+                      ) : (
+                        <span className="text-xs text-gray-400 font-mono">{r.sfOpportunityId}</span>
+                      )
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

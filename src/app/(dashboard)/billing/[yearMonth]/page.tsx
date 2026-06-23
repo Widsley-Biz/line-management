@@ -219,7 +219,7 @@ export default async function BillingMonthPage({
       {/* Table */}
       <Card>
         <CardContent className="p-4">
-          <BillingTable rows={rows} yearMonth={yearMonth} />
+          <BillingTable rows={rows} yearMonth={yearMonth} sfOrgUrl={process.env.NEXT_PUBLIC_SF_ORG_URL} />
         </CardContent>
       </Card>
     </div>

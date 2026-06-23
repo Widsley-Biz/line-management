@@ -98,6 +98,11 @@ export const users = sqliteTable("users", {
   role: text("role", { enum: ["admin", "leader", "member", "viewer"] })
     .notNull()
     .default("member"),
+  sfUserId: text("sf_user_id"),
+  sfAccessToken: text("sf_access_token"),
+  sfRefreshToken: text("sf_refresh_token"),
+  sfTokenExpiresAt: text("sf_token_expires_at"),
+  sfInstanceUrl: text("sf_instance_url"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),

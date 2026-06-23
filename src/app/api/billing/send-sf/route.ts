@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { monthlyUsages, tenants, auditLogs } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import jsforce from "jsforce";
+import { auth } from "@/lib/auth";
+import { getUserSFConnection, getSystemSFConnection } from "@/lib/sf-connection";
 
 export async function POST(req: NextRequest) {
   try {
@@ -54,15 +55,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "超過料金なし" });
     }
 
-    // Connect to Salesforce
-    const conn = new jsforce.Connection({
-      loginUrl: process.env.SF_LOGIN_URL ?? "https://login.salesforce.com",
-    });
-
-    await conn.login(
-      process.env.SF_USERNAME!,
-      (process.env.SF_PASSWORD ?? "") + (process.env.SF_SECURITY_TOKEN ?? "")
-    );
+    // Connect to Salesforce — prefer user's token, fallback to system
+    const session = await auth();
+    let conn = session?.user?.id
+      ? await getUserSFConnection(session.user.id)
+      : null;
+    const usedUserToken = !!conn;
+    if (!conn) {
+      conn = await getSystemSFConnection();
+    }
 
     const now = new Date().toISOString();
 
@@ -124,10 +125,15 @@ export async function POST(req: NextRequest) {
     // Audit log
     await db.insert(auditLogs).values({
       id: randomUUID(),
+      userId: session?.user?.id ?? null,
       actionType: "sf_send",
       targetTable: "monthly_usages",
       targetId: usage.id,
-      afterJson: JSON.stringify({ sfStatus: "送信済", sfSentAt: now }),
+      afterJson: JSON.stringify({
+        sfStatus: "送信済",
+        sfSentAt: now,
+        usedUserToken,
+      }),
       createdAt: now,
     });
 

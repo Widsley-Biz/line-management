@@ -43,6 +43,13 @@
       "when": 1777300000000,
       "tag": "0005_billing_items_master",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1782300000000,
+      "tag": "0006_user_sf_tokens",
+      "breakpoints": true
     }
   ]
 }

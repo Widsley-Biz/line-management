@@ -28,7 +28,7 @@ function formatYen(v: number) {
   return v === 0 ? "¥0" : `¥${v.toLocaleString()}`;
 }
 
-export function BillingTable({ rows, yearMonth }: { rows: BillingRow[]; yearMonth: string }) {
+export function BillingTable({ rows, yearMonth, sfOrgUrl }: { rows: BillingRow[]; yearMonth: string; sfOrgUrl?: string }) {
   const [search, setSearch] = useState("");
   const [sortCol, setSortCol] = useState("companyName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -142,9 +142,9 @@ export function BillingTable({ rows, yearMonth }: { rows: BillingRow[]; yearMont
                       />
                     )}
                     {r.sfOpportunityId && (
-                      process.env.NEXT_PUBLIC_SF_ORG_URL ? (
+                      sfOrgUrl ? (
                         <a
-                          href={`${process.env.NEXT_PUBLIC_SF_ORG_URL}/${r.sfOpportunityId}`}
+                          href={`${sfOrgUrl}/${r.sfOpportunityId}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-blue-600 hover:underline font-mono whitespace-nowrap"

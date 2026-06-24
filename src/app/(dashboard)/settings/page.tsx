@@ -72,6 +72,28 @@ async function updateUser(formData: FormData) {
   redirect("/settings");
 }
 
+async function updateSfUserId(formData: FormData) {
+  "use server";
+  const id = formData.get("userId") as string;
+  const sfUserId = (formData.get("sfUserId") as string)?.trim() || null;
+  if (!id) return;
+  await db.update(users).set({
+    sfUserId,
+    updatedAt: new Date().toISOString(),
+  }).where(eq(users.id, id));
+  const session = await auth();
+  await logActivity({
+    userId: session?.user?.id,
+    actionType: "sf_mapping",
+    message: sfUserId
+      ? `SF UserID を手動設定: ${sfUserId}`
+      : `SF UserID を解除`,
+    targetTable: "users",
+    targetId: id,
+  });
+  redirect("/settings");
+}
+
 async function deleteUser(formData: FormData) {
   "use server";
   const id = formData.get("userId") as string;
@@ -157,15 +179,16 @@ async function togglePackActive(formData: FormData) {
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ editUser?: string; editPack?: string }>;
+  searchParams: Promise<{ editUser?: string; editPack?: string; sfError?: string; sfSuccess?: string }>;
 }) {
-  const { editUser, editPack } = await searchParams;
+  const { editUser, editPack, sfError, sfSuccess: _sfSuccess } = await searchParams;
 
   const [userList, packList] = await Promise.all([
     db.select().from(users).orderBy(users.name),
     db.select().from(packs).orderBy(packs.sortOrder),
   ]);
 
+  const currentSession = await auth();
   const editingUser = editUser ? userList.find((u) => u.id === editUser) : null;
   const editingPack = editPack ? packList.find((p) => p.id === editPack) : null;
 
@@ -175,6 +198,18 @@ export default async function SettingsPage({
         <h1 className="text-2xl font-bold text-gray-900">設定</h1>
         <p className="text-sm text-gray-500 mt-1">システム設定・マスタ管理</p>
       </div>
+
+      {/* SF連携通知 */}
+      {sfError && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          SF連携エラー: {decodeURIComponent(sfError)}
+        </div>
+      )}
+      {_sfSuccess && (
+        <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+          SF連携が完了しました
+        </div>
+      )}
 
       {/* ── Users ── */}
       <Card>
@@ -191,7 +226,7 @@ export default async function SettingsPage({
                 <th className="text-left px-3 py-2 font-medium text-gray-600">名前</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">メール</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">ロール</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">作成日</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">SF連携</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -204,9 +239,28 @@ export default async function SettingsPage({
                     <td className="px-3 py-2">
                       <Badge variant={u.role === "admin" ? "default" : "outline"}>{u.role}</Badge>
                     </td>
-                    <td className="px-3 py-2 text-gray-400 text-xs">{u.createdAt?.split("T")[0]}</td>
+                    <td className="px-3 py-2">
+                      {u.sfRefreshToken ? (
+                        <Badge variant="default" className="text-xs">連携済</Badge>
+                      ) : u.sfUserId ? (
+                        <Badge variant="outline" className="text-xs">ID手動設定</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs">未連携</Badge>
+                      )}
+                      {u.sfUserId && (
+                        <span className="block text-[10px] text-gray-400 font-mono mt-0.5">{u.sfUserId}</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       <div className="flex gap-1">
+                        {u.id === currentSession?.user?.id && !u.sfRefreshToken && (
+                          <a
+                            href="/api/auth/sf/connect"
+                            className="text-xs px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700"
+                          >
+                            SF連携
+                          </a>
+                        )}
                         <a
                           href={`/settings?editUser=${u.id}`}
                           className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700"
@@ -265,6 +319,24 @@ export default async function SettingsPage({
                             </a>
                           </div>
                         </form>
+                        {currentSession?.user?.role === "admin" && (
+                          <div className="border-t mt-3 pt-3">
+                            <p className="text-xs font-medium text-gray-500 mb-2">SF UserID 手動設定（管理者用）</p>
+                            <form action={updateSfUserId} className="flex gap-2 items-end">
+                              <input type="hidden" name="userId" value={u.id} />
+                              <div className="flex-1 space-y-1">
+                                <Label className="text-xs">SF User ID (18桁)</Label>
+                                <Input
+                                  name="sfUserId"
+                                  defaultValue={u.sfUserId ?? ""}
+                                  placeholder="005xxxxxxxxxxxxxxx"
+                                  className="h-8 text-sm font-mono"
+                                />
+                              </div>
+                              <Button type="submit" size="sm" variant="outline">設定</Button>
+                            </form>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}

@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { mobileUsages, tenants } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import jsforce from "jsforce";
 import type { Connection } from "jsforce";
 import { logActivity } from "@/lib/audit";
+import { auth } from "@/lib/auth";
+import { getUserSFConnection, getSystemSFConnection } from "@/lib/sf-connection";
 
 // 利用月から請求月（+2ヶ月）を計算
 function getBillingMonth(yearMonth: string): { startDate: string; endDate: string; billingMonth: string } {
@@ -22,35 +23,13 @@ function getBillingMonth(yearMonth: string): { startDate: string; endDate: strin
 }
 
 async function getSFConnection(): Promise<Connection> {
-  const clientId = process.env.SF_CLIENT_ID;
-  const clientSecret = process.env.SF_CLIENT_SECRET;
-  const instanceUrl = process.env.SF_INSTANCE_URL ?? "https://login.salesforce.com";
-
-  if (!clientId || !clientSecret) {
-    throw new Error("SF_CLIENT_ID または SF_CLIENT_SECRET が設定されていません");
+  // Prefer user's token, fallback to system
+  const session = await auth();
+  if (session?.user?.id) {
+    const userConn = await getUserSFConnection(session.user.id);
+    if (userConn) return userConn;
   }
-
-  const tokenRes = await fetch(`${instanceUrl}/services/oauth2/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "client_credentials",
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
-  });
-
-  if (!tokenRes.ok) {
-    const err = await tokenRes.text();
-    throw new Error(`SF認証エラー: ${err}`);
-  }
-
-  const token = await tokenRes.json() as { access_token: string; instance_url: string };
-
-  return new jsforce.Connection({
-    instanceUrl: token.instance_url,
-    accessToken: token.access_token,
-  });
+  return getSystemSFConnection();
 }
 
 async function sendToSF(

@@ -1,26 +1,17 @@
 # 次期タスク一覧
 
-**最終更新：** 2026年6月17日
+**最終更新：** 2026年6月23日
 
 ---
 
 ## 実装待ちタスク
 
-### BUG-08：SF商談IDリンクが請求管理ページに表示されない
-- **優先度：** 中
-- **概要：** `NEXT_PUBLIC_SF_ORG_URL` を `.env.local` に設定してもSF商談IDリンクが請求管理一覧・詳細ページに表示されない
-- **調査ポイント：**
-  - `billing-table.tsx`（クライアントコンポーネント）で `process.env.NEXT_PUBLIC_SF_ORG_URL` が正しく参照できているか確認
-  - env未設定時のフォールバック（グレーテキスト表示）も出ていないか確認 → 出ていない場合はクエリ or 型定義の問題
-  - dev サーバー再起動後に再確認
-- **対象ファイル：**
-  - `src/components/billing-table.tsx`
-  - `src/app/(dashboard)/billing/[yearMonth]/page.tsx`
-  - `src/app/(dashboard)/billing/[yearMonth]/[tenantId]/page.tsx`
-
-### FEAT-04：ユーザー毎のSF接続ロジック構築
-- **優先度：** 高
-- **概要：** 現在はシステム共通のSFシステム管理者アカウント（client_credentials）でSF更新しているが、このシステムのログインユーザーに紐づくSFユーザーで商談を更新できる仕組みを構築する
+### DEPLOY-01：本番デプロイ時のSFコールバックURL追加
+- **優先度：** 高（本番デプロイ時に対応必須）
+- **概要：** サーバーのドメインが決まったら、SF Connected AppのコールバックURLに本番URL（`https://[本番ドメイン]/api/auth/sf/callback`）を追加する
+- **対応内容：**
+  - SF設定 → App Manager → Connected App → コールバックURLに本番URLを追加
+  - `.env` の `NEXTAUTH_URL` を本番ドメインに設定
 
 ---
 
@@ -122,3 +113,5 @@
 - ✅ BUG-07：インポートモーダルの課金項目表示とマスタ一覧の不一致修正（`continuousImport` フィルター除去・プレビュー時データ行スキャンで未検出項目を補完）
 - ✅ VERIFY-01：SoftBank CSV取込ロジック変更（氏名→取引先名照合）の検証完了 — 複数月の実データで照合・mobileUsages/mobileUsageDetails 正常生成確認済み
 - ✅ FEAT-05：SF商談IDリンク実装（取引先詳細・請求管理一覧・請求詳細・SF未送信一覧）— `NEXT_PUBLIC_SF_ORG_URL` 設定時はリンク、未設定時はテキスト表示
+- ✅ BUG-08：SF商談IDリンクが請求管理ページに表示されない — クライアントコンポーネントの `process.env` 参照をサーバーコンポーネントからのprop渡しに修正
+- ✅ FEAT-04：ユーザー毎のSF接続ロジック構築 — SF OAuth (PKCE) によるユーザー単位の連携・管理者用手動紐付け・トークン自動リフレッシュ・SF送信時ユーザートークン優先

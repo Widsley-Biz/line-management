@@ -9,7 +9,7 @@ function getDb(): DrizzleDb {
   if (_db) return _db;
   const dbPath = path.resolve(process.cwd(), process.env.DATABASE_URL ?? "lime.db");
   const sqlite = new Database(dbPath);
-  sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("journal_mode = DELETE");
   sqlite.pragma("foreign_keys = ON");
   _db = drizzle(sqlite, { schema });
   return _db;

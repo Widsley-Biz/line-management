@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       const cols = parseCsvLine(lines[i]);
       const companyName = cols[0]?.trim() ?? "";
       const sfOpportunityId = cols[1]?.trim() ?? "";
-      const mfPartnerId = cols[2]?.trim() || null;
+      const tenantCode = cols[2]?.trim() || null;
       const notes = cols[3]?.trim() || null;
 
       // 必須チェック
@@ -80,8 +80,8 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // slugはSF商談IDをそのまま使用
-      const slug = sfOpportunityId;
+      // 取引先コード指定があればそれを使用、なければSF商談IDをフォールバック
+      const slug = tenantCode ?? sfOpportunityId;
 
       // slug重複チェック
       if (existingSlugs.has(slug)) {
@@ -96,7 +96,6 @@ export async function POST(req: NextRequest) {
         slug,
         companyName,
         sfOpportunityId,
-        mfPartnerId,
         assigneeId: null,
         status: "active",
         notes,

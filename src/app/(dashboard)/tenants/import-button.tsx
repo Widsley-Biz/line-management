@@ -22,8 +22,8 @@ export function TenantImportButton() {
 
   function downloadTemplate() {
     const bom = "\uFEFF";
-    const header = "会社名,SF商談ID,MFパートナーID,備考";
-    const example = "株式会社サンプル,006Q900001aE5U2IAK,,";
+    const header = "会社名,SF商談ID,取引先コード,備考";
+    const example = "株式会社サンプル,006Q900001aE5U2IAK,ABC-001,";
     const blob = new Blob([bom + header + "\n" + example], {
       type: "text/csv;charset=utf-8;",
     });
@@ -94,10 +94,10 @@ export function TenantImportButton() {
               {/* フォーマット説明 */}
               <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-xs text-blue-800 space-y-1">
                 <p className="font-medium">CSVフォーマット（1行目はヘッダー）</p>
-                <p className="font-mono">会社名,SF商談ID,MFパートナーID,備考</p>
+                <p className="font-mono">会社名,SF商談ID,取引先コード,備考</p>
                 <p className="text-gray-500">※ 会社名・SF商談ID は必須</p>
-                <p className="text-gray-500">※ slugはSF商談IDが自動設定されます</p>
-                <p className="text-gray-500">※ SF商談IDが重複する行はスキップされます</p>
+                <p className="text-gray-500">※ 取引先コード未入力の場合はSF商談IDが自動設定されます</p>
+                <p className="text-gray-500">※ SF商談ID・取引先コードが重複する行はスキップされます</p>
               </div>
 
               <Button variant="outline" size="sm" onClick={downloadTemplate}>

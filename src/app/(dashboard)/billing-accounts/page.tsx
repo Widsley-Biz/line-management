@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { db } from "@/lib/db";
 import { billingAccounts, channelGroups, phoneNumbers } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";

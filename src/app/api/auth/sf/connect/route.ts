@@ -42,7 +42,7 @@ export async function GET() {
   // Store code_verifier in cookie for callback to use
   response.cookies.set("sf_code_verifier", codeVerifier, {
     httpOnly: true,
-    secure: false, // localhost
+    secure: process.env.NODE_ENV === "production", // 本番(HTTPS)ではsecureクッキー、ローカルでは無効
     maxAge: 600, // 10 minutes
     path: "/api/auth/sf",
     sameSite: "lax",

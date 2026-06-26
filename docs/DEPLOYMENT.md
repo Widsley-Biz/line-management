@@ -135,3 +135,34 @@ git push origin main
 - DB は `/data/lime.db` (GCS-FUSE)。FUSE は同時書き込みに弱いため、上記インスタンス制約が前提。
 - ジャーナルモードは `DELETE` 固定 (WAL は GCS-FUSE 非対応)。
 - 本番イメージではマイグレーション不可。スキーマ変更時は Cloud Shell で migrate → lime.db を再アップロード、もしくは別途マイグレーション手段を用意する。
+
+
+---
+
+## 2026-06-26: Salesforce連携の修正記録
+
+### 事象（修正前の不具合）
+
+本番環境では、どのユーザーで「SF連携設定」を行っても、個人のOAuth認証画面を経ずに即時接続され、全員がシステム管理者アカウント（salesforce@widsley.com）としてSFに送信されてしまう問題があった。
+
+### 原因
+
+- mobile/send-sf と billing/send-sf のSF接続取得ロジックが「ユーザー個人のトークンを優先、なければシステム共通アカウントにフォールバック」する実装だった。ユーザーが未連携だと getSystemSFConnection()（client_credentials = システム管理者固定）に落ちるため、全員が同一アカウント扱いになっていた。
+- さらに auth/sf/connect のPKCE用 sf_code_verifier クッキーが secure: false（localhost前提）のため、本番（HTTPS）でOAuthフローが正常に成立しにくかった。
+
+### 修正内容（すべて main にコミット済）
+
+- src/app/api/mobile/send-sf/route.ts: システム共通アカウントへのフォールバックを廃止。ユーザー個人のSF連携トークンがなければエラーを返す（commit 616e7e8）。
+- src/app/api/billing/send-sf/route.ts: 同様のフォールバックを廃止（commit b568e72）。
+- src/app/api/auth/sf/connect/route.ts: クッキーを secure: process.env.NODE_ENV === "production" に変更し、本番でOAuthフローが完了するように修正（commit 1d38511）。
+
+### 修正後の振る舞い
+
+- 各ユーザーが「SF連携設定」ボタンから個人のSalesforce OAuth連携を一度ずつ実施する必要がある（未連携のユーザーは送信時にエラーになる）。
+- 送信は「そのユーザー本人のSFアカウント」として行われるようになる。
+
+### 残タスク（要対応）
+
+1. Cloud Run の環境変数追加（ユーザー作業）: SF_CLIENT_ID / SF_CLIENT_SECRET（Consumer Key/Secret、シークレットは本人が入力）、SF_INSTANCE_URL を Cloud Run の「変数とシークレット」に設定。
+2. Salesforce External Client App のコールバックURLを本番へ変更済み: https://line-management-168668335532.asia-northeast1.run.app/api/auth/sf/callback
+3. Cloud Run の一般公開（IAM）（社長作業）: allUsers + roles/run.invoker。「認証」タブで「公開アクセスを許可する」を選択（未対応）。

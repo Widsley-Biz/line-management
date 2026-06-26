@@ -55,15 +55,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "超過料金なし" });
     }
 
-    // Connect to Salesforce — prefer user's token, fallback to system
-    const session = await auth();
-    let conn = session?.user?.id
-      ? await getUserSFConnection(session.user.id)
-      : null;
-    const usedUserToken = !!conn;
-    if (!conn) {
-      conn = await getSystemSFConnection();
-    }
+  // Connect to Salesforce - 各ユーザー個人のSF連携トークンを必須とする（システム共通アカウントへのフォールバックは廃止）
+      const session = await auth();
+      if (!session?.user?.id) {
+            throw new Error("ログインが必要です");
+      }
+      const conn = await getUserSFConnection(session.user.id);
+      if (!conn) {
+            throw new Error("Salesforce連携が完了していません。設定画面からSalesforceと連携してください。");
+      }
+      const usedUserToken = true;
 
     const now = new Date().toISOString();
 

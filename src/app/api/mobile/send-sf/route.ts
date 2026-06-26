@@ -23,13 +23,16 @@ function getBillingMonth(yearMonth: string): { startDate: string; endDate: strin
 }
 
 async function getSFConnection(): Promise<Connection> {
-  // Prefer user's token, fallback to system
-  const session = await auth();
-  if (session?.user?.id) {
+  // 各ユーザー個人のSF連携トークンを必須とする（システム共通アカウントへのフォールバックは廃止）
+    const session = await auth();
+    if (!session?.user?.id) {
+          throw new Error("ログインが必要です");
+    }
     const userConn = await getUserSFConnection(session.user.id);
-    if (userConn) return userConn;
-  }
-  return getSystemSFConnection();
+    if (!userConn) {
+          throw new Error("Salesforce連携が完了していません。設定画面からSalesforceと連携してください。");
+    }
+    return userConn;
 }
 
 async function sendToSF(

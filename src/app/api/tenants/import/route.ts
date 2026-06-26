@@ -48,10 +48,10 @@ export async function POST(req: NextRequest) {
     );
 
     const now = new Date().toISOString();
-    let inserted = 0;
     let skipped = 0;
     const errors: string[] = [];
     const duplicates: string[] = [];
+    const toInsert: (typeof tenants.$inferInsert)[] = [];
 
     // 1行目はヘッダーとしてスキップ
     for (let i = 1; i < lines.length; i++) {
@@ -90,9 +90,8 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const id = randomUUID();
-      await db.insert(tenants).values({
-        id,
+      toInsert.push({
+        id: randomUUID(),
         slug,
         companyName,
         sfOpportunityId,
@@ -102,11 +101,15 @@ export async function POST(req: NextRequest) {
         createdAt: now,
         updatedAt: now,
       });
-
       existingSlugs.add(slug);
       existingSfIds.add(sfOpportunityId);
-      inserted++;
     }
+
+    // バルクインサート（1トランザクションでまとめて書き込み）
+    if (toInsert.length > 0) {
+      await db.insert(tenants).values(toInsert);
+    }
+    const inserted = toInsert.length;
 
     await logActivity({
       actionType: "import",

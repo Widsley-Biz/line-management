@@ -74,12 +74,20 @@ export async function POST(req: NextRequest) {
     const lastDayNum = new Date(ymYear, ymMonth, 0).getDate();
     const endDate = `${yearMonth}-${String(lastDayNum).padStart(2, "0")}`;
 
+    // 商談に価格表をセット
+    await (conn.sobject("Opportunity") as unknown as {
+      update: (item: object) => Promise<{ success: boolean; errors?: unknown[] }>;
+    }).update({
+      Id: tenant.sfOpportunityId,
+      Pricebook2Id: process.env.SF_PRICEBOOK2_ID,
+    });
+
     const lineItems: object[] = [];
 
     if (usage.overageFixed > 0) {
       lineItems.push({
         OpportunityId: tenant.sfOpportunityId,
-        Product2Id: process.env.SF_PRODUCT2_ID_CC01,
+        PricebookEntryId: process.env.SF_PRICEBOOK_ENTRY_ID_CC01,
         UnitPrice: Math.round(usage.overageFixed),
         Quantity: 1,
         Billing_start_date__c: startDate,
@@ -91,7 +99,7 @@ export async function POST(req: NextRequest) {
     if (usage.overageMobile > 0) {
       lineItems.push({
         OpportunityId: tenant.sfOpportunityId,
-        Product2Id: process.env.SF_PRODUCT2_ID_CC02,
+        PricebookEntryId: process.env.SF_PRICEBOOK_ENTRY_ID_CC02,
         UnitPrice: Math.round(usage.overageMobile),
         Quantity: 1,
         Billing_start_date__c: startDate,

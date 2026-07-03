@@ -10,6 +10,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ENV NEXT_PUBLIC_SF_ORG_URL=https://widsley.my.salesforce.com
 RUN npm run build
 
 # Stage 3: runner

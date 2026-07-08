@@ -8,10 +8,14 @@ export function TenantCombobox({
   tenants,
   name = "tenantId",
   defaultTenant = null,
+  onChange,
+  placeholder = "会社名で検索...",
 }: {
   tenants: TenantOption[];
   name?: string;
   defaultTenant?: TenantOption | null;
+  onChange?: (tenant: TenantOption | null) => void;
+  placeholder?: string;
 }) {
   const [query, setQuery] = useState(defaultTenant?.companyName ?? "");
   const [selected, setSelected] = useState<TenantOption | null>(defaultTenant);
@@ -28,12 +32,14 @@ export function TenantCombobox({
     setSelected(t);
     setQuery(t.companyName);
     setOpen(false);
+    onChange?.(t);
   }
 
   function clear() {
     setSelected(null);
     setQuery("");
     setOpen(false);
+    onChange?.(null);
   }
 
   // Close on outside click
@@ -59,11 +65,12 @@ export function TenantCombobox({
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
+            if (selected) onChange?.(null);
             setSelected(null);
             setOpen(true);
           }}
           onFocus={() => { if (query) setOpen(true); }}
-          placeholder="会社名で検索..."
+          placeholder={placeholder}
           className="w-full h-8 pl-8 pr-7 rounded-md border border-input bg-background text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary"
         />
         {query && (

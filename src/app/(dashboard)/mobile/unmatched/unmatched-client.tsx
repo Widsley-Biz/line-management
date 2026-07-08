@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatYen } from "@/lib/format";
+import { TenantCombobox } from "@/components/tenant-combobox";
 import { CheckCircle, EyeOff, Trash2 } from "lucide-react";
 
 type Row = {
@@ -194,16 +195,13 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
                       <td className="px-4 py-3">
                         {isPending && (
                           <div className="flex gap-2">
-                            <select
-                              value={selected[r.id] ?? ""}
-                              onChange={(e) => setSelected((p) => ({ ...p, [r.id]: e.target.value }))}
-                              className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none"
-                            >
-                              <option value="">取引先を選択...</option>
-                              {tenants.map((t) => (
-                                <option key={t.id} value={t.id}>{t.companyName}</option>
-                              ))}
-                            </select>
+                            <div className="flex-1">
+                              <TenantCombobox
+                                tenants={tenants}
+                                placeholder="取引先を検索..."
+                                onChange={(t) => setSelected((p) => ({ ...p, [r.id]: t?.id ?? "" }))}
+                              />
+                            </div>
                             <Button
                               size="sm"
                               className="h-8 px-2"

@@ -257,8 +257,6 @@ async function importSoftBank(
   // ヘッダ行・データ行をバッファ
   let headerRow: (string | number | null | undefined)[] = [];
   const dataRows: (string | number | null | undefined)[][] = [];
-  // プレビュー用：最初のデータ行（未登録列の数値検出に使用）
-  let firstDataRow: (string | number | null | undefined)[] = [];
 
   if (isCSV) {
     const text = new TextDecoder("utf-8").decode(buffer);
@@ -266,15 +264,10 @@ async function importSoftBank(
     if (lines.length > 0) {
       headerRow = [null, ...parseCsvLine(lines[0])];
     }
-    if (previewOnly) {
-      // プレビューモードは最初のデータ行（index 2）のみ取得
-      if (lines.length > 2) {
-        firstDataRow = [null, ...parseCsvLine(lines[2])];
-      }
-    } else {
-      for (const line of lines.slice(2)) {
-        dataRows.push([null, ...parseCsvLine(line)]);
-      }
+    // ヘッダ以降は全行を対象にする。税区分行や小計行は氏名・電話番号が
+    // 空のため後段の行処理でスキップされる（税区分行の有無に依存しない）
+    for (const line of lines.slice(1)) {
+      dataRows.push([null, ...parseCsvLine(line)]);
     }
   } else {
     const ExcelJS = (await import("exceljs")).default;
@@ -287,11 +280,6 @@ async function importSoftBank(
         headerRow = row.values as (string | number | null | undefined)[];
       }
       if (rowNumber <= 2) return;
-      if (previewOnly) {
-        // プレビューモードは最初のデータ行（row 3）のみ取得
-        if (rowNumber === 3) firstDataRow = row.values as (string | number | null | undefined)[];
-        return;
-      }
       dataRows.push(row.values as (string | number | null | undefined)[]);
     });
   }
@@ -321,6 +309,29 @@ async function importSoftBank(
     }
     // それ以外（ICCID・機種契約番号・氏名・料金プラン名称 等）は無視
   }
+
+  // ヘッダ行から氏名・電話番号の列インデックスを動的検出
+  let nameColIdx = 2; // デフォルト col B
+  let phoneColIdx = 3; // デフォルト col C
+  const nameKeywords = ["氏名", "利用者", "契約者", "お名前", "ご利用者", "名前"];
+  const phoneKeywords = ["電話番号", "電話", "TEL", "tel", "携帯番号"];
+  // 課金項目の開始列より手前のみ走査（「通話料　国際電話」等の課金項目名が
+  // キーワードに誤一致して電話番号列と判定されるのを防ぐ）
+  const billingStartIdx =
+    colNameMap.size > 0 ? Math.min(...colNameMap.keys()) : 13;
+  for (let i = 1; i < Math.min(13, billingStartIdx); i++) {
+    const h = String(headerRow[i] ?? "").trim();
+    if (h && nameKeywords.some((k) => h.includes(k))) nameColIdx = i;
+    if (h && phoneKeywords.some((k) => h.includes(k))) phoneColIdx = i;
+  }
+
+  // 最初の実データ行（税区分行・小計行を除く）。未登録列の数値検出に使用
+  const firstDataRow =
+    dataRows.find((values) => {
+      const n = String(values[nameColIdx] ?? "").trim();
+      const p = String(values[phoneColIdx] ?? "").trim();
+      return Boolean(n || p);
+    }) ?? [];
 
   // プレビューモード：完全一致した課金項目と未登録項目を返すだけ（DB書込なし）
   if (previewOnly) {
@@ -367,18 +378,6 @@ async function importSoftBank(
       unmatched: [],
       errors: [errorMsg],
     };
-  }
-
-  // ヘッダ行から氏名・電話番号の列インデックスを動的検出（列1〜3を走査）
-  let nameColIdx = 2; // デフォルト col B
-  let phoneColIdx = 3; // デフォルト col C
-  const nameKeywords = ["氏名", "利用者", "契約者", "お名前", "ご利用者", "名前"];
-  const phoneKeywords = ["電話番号", "電話", "TEL", "tel", "携帯番号"];
-  // 課金項目開始列(=colNameMap/unknownItemsスキャン開始)の手前まで走査
-  for (let i = 1; i <= 12; i++) {
-    const h = String(headerRow[i] ?? "").trim();
-    if (h && nameKeywords.some((k) => h.includes(k))) nameColIdx = i;
-    if (h && phoneKeywords.some((k) => h.includes(k))) phoneColIdx = i;
   }
 
   // データ行を処理
@@ -446,12 +445,12 @@ async function importSoftBank(
   const now = new Date().toISOString();
   let success = 0;
 
-  for (const [tenantId, overageTotal] of tenantOverage.entries()) {
-    const totalLines = tenantLines.get(tenantId)?.size ?? 0;
-    const sfStatus = overageTotal > 0 ? "未送信" : "超過なし";
+  for (const [tenantId, fileOverage] of tenantOverage.entries()) {
+    const fileIdentifiers = tenantLines.get(tenantId) ?? new Set<string>();
+    const phoneMap = detailMap.get(tenantId);
 
     const existing = await db
-      .select({ id: mobileUsages.id })
+      .select({ id: mobileUsages.id, totalLines: mobileUsages.totalLines })
       .from(mobileUsages)
       .where(
         and(
@@ -462,32 +461,44 @@ async function importSoftBank(
       .then((rows) => rows[0] ?? null);
 
     let usageId: string;
+    let oldPhones: Set<string> | null = null;
 
     if (existing) {
       usageId = existing.id;
-      await db
-        .update(mobileUsages)
-        .set({ overageTotal, totalLines, sfStatus, importedAt: now, updatedAt: now })
-        .where(eq(mobileUsages.id, usageId));
-      await db
-        .delete(mobileUsageDetails)
+      // 差分マージ: 今回ファイルに含まれる回線（電話番号）の明細だけ入れ替え、
+      // 含まれない回線の既存明細は保持する（同一ファイルの再取込は冪等になる）
+      const oldDetails = await db
+        .select({ phoneNumber: mobileUsageDetails.phoneNumber })
+        .from(mobileUsageDetails)
         .where(eq(mobileUsageDetails.mobileUsageId, usageId));
+      oldPhones = new Set(oldDetails.map((d) => d.phoneNumber));
+
+      const filePhones = phoneMap ? [...phoneMap.keys()] : [];
+      if (filePhones.length > 0) {
+        await db
+          .delete(mobileUsageDetails)
+          .where(
+            and(
+              eq(mobileUsageDetails.mobileUsageId, usageId),
+              inArray(mobileUsageDetails.phoneNumber, filePhones)
+            )
+          );
+      }
     } else {
       usageId = randomUUID();
       await db.insert(mobileUsages).values({
         id: usageId,
         tenantId,
         yearMonth,
-        totalLines,
-        overageTotal,
-        sfStatus,
+        totalLines: fileIdentifiers.size,
+        overageTotal: fileOverage,
+        sfStatus: fileOverage > 0 ? "未送信" : "超過なし",
         importedAt: now,
         createdAt: now,
         updatedAt: now,
       });
     }
 
-    const phoneMap = detailMap.get(tenantId);
     if (phoneMap) {
       const detailInserts = [];
       for (const [phoneNumber, items] of phoneMap.entries()) {
@@ -509,10 +520,37 @@ async function importSoftBank(
       }
     }
 
+    if (existing && oldPhones) {
+      // マージ後の明細から超過合計を再計算
+      const mergedOverage = await db
+        .select({
+          total: sql<number>`coalesce(sum(${mobileUsageDetails.amount}), 0)`,
+        })
+        .from(mobileUsageDetails)
+        .where(eq(mobileUsageDetails.mobileUsageId, usageId))
+        .then((rows) => rows[0]?.total ?? 0);
+      // 回線数は既存分＋今回新たに現れた回線を加算
+      // （超過ゼロで明細を持たない既存回線は識別できないため近似）
+      const addedLines = [...fileIdentifiers].filter(
+        (line) => !oldPhones.has(line)
+      ).length;
+      await db
+        .update(mobileUsages)
+        .set({
+          overageTotal: mergedOverage,
+          totalLines: existing.totalLines + addedLines,
+          sfStatus: mergedOverage > 0 ? "未送信" : "超過なし",
+          importedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(mobileUsages.id, usageId));
+    }
+
     success++;
   }
 
-  // 未照合行を DB に保存（pending のみ削除→再挿入、resolved/ignored は保持）
+  // 未照合行を DB に保存（今回ファイルに現れた氏名の pending のみ入れ替え、
+  // 他の pending・resolved/ignored は保持する）
   if (unmatchedMap.size > 0) {
     const pendingIds = await db
       .select({ id: mobileImportUnmatched.id })
@@ -520,7 +558,8 @@ async function importSoftBank(
       .where(
         and(
           eq(mobileImportUnmatched.yearMonth, yearMonth),
-          eq(mobileImportUnmatched.status, "pending")
+          eq(mobileImportUnmatched.status, "pending"),
+          inArray(mobileImportUnmatched.rawName, Array.from(unmatchedMap.keys()))
         )
       );
     if (pendingIds.length > 0) {

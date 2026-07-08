@@ -137,7 +137,7 @@ export function ImportForm() {
   };
 
   const handleImport = async () => {
-    if (!yearMonth) { setError("対象年月を入力してください"); return; }
+    if (!yearMonth) { setError("利用年月を入力してください"); return; }
     if (!adjustOneFile && !proDelightFile && !softBankFile) { setError("CSVファイルを選択してください"); return; }
 
     setError(null);
@@ -325,11 +325,11 @@ export function ImportForm() {
       {/* Year Month */}
       <Card>
         <CardHeader>
-          <CardTitle>対象年月</CardTitle>
+          <CardTitle>利用年月</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-1 max-w-xs">
-            <Label htmlFor="yearMonth">年月 *</Label>
+            <Label htmlFor="yearMonth">利用年月 *</Label>
             <Input
               id="yearMonth"
               type="month"
@@ -454,6 +454,9 @@ export function ImportForm() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <p className="text-xs text-gray-500">
+            ※ 取り込みは<span className="font-medium text-gray-700">差分マージ</span>です。ファイルに含まれる回線（電話番号）の明細だけが更新され、含まれない回線の取り込み済みデータは保持されます。同じファイルを再取り込みしても二重計上はされません。
+          </p>
           <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-blue-200 rounded-lg cursor-pointer hover:border-blue-400 transition-colors">
             <Upload className="h-6 w-6 text-blue-400 mb-1" />
             <span className="text-sm text-gray-500">

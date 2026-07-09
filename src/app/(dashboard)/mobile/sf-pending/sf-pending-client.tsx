@@ -5,6 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatYen } from "@/lib/format";
 import { Send, Loader2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 export type PendingRow = {
   id: string;
@@ -26,6 +34,8 @@ export function SfPendingClient({ rows }: { rows: PendingRow[] }) {
   const [showNoSf, setShowNoSf] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [excluding, setExcluding] = useState(false);
+  const [excludeDialogOpen, setExcludeDialogOpen] = useState(false);
+  const [excludeReason, setExcludeReason] = useState("");
   const [sending, setSending] = useState<string | null>(null);
   const [sendResults, setSendResults] = useState<Record<string, "ok" | "error">>({});
 
@@ -79,7 +89,7 @@ export function SfPendingClient({ rows }: { rows: PendingRow[] }) {
       await fetch("/api/mobile/billing-status", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ usageIds: Array.from(checked), status: "対応不要" }),
+        body: JSON.stringify({ usageIds: Array.from(checked), status: "対応不要", reason: excludeReason }),
       });
       window.location.reload();
     } finally {
@@ -109,6 +119,32 @@ export function SfPendingClient({ rows }: { rows: PendingRow[] }) {
 
   return (
     <div className="space-y-4">
+      {/* 対応不要の理由入力ダイアログ */}
+      <Dialog open={excludeDialogOpen} onOpenChange={(o) => { if (!o) setExcludeDialogOpen(false); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{checked.size}件を対応不要にする</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p className="text-gray-600">理由を入力してください（任意）</p>
+            <Textarea
+              value={excludeReason}
+              onChange={(e) => setExcludeReason(e.target.value)}
+              placeholder="例: 社内利用のため請求対象外"
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExcludeDialogOpen(false)} disabled={excluding}>
+              キャンセル
+            </Button>
+            <Button onClick={handleExclude} disabled={excluding}>
+              {excluding ? "処理中..." : "対応不要にする"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* サマリー */}
       <div className="grid grid-cols-3 gap-4">
         <Card>
@@ -176,7 +212,7 @@ export function SfPendingClient({ rows }: { rows: PendingRow[] }) {
       {checked.size > 0 && (
         <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-lg border">
           <span className="text-sm text-gray-700 font-medium">{checked.size}件選択中</span>
-          <Button size="sm" variant="outline" onClick={handleExclude} disabled={excluding}>
+          <Button size="sm" variant="outline" onClick={() => { setExcludeReason(""); setExcludeDialogOpen(true); }} disabled={excluding}>
             {excluding ? "処理中..." : "対応不要にする"}
           </Button>
           <button onClick={clearAll} className="text-xs text-gray-400 hover:text-gray-600 ml-auto">

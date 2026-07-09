@@ -4,7 +4,7 @@ import { mobileUsages } from "@/lib/db/schema";
 import { inArray } from "drizzle-orm";
 
 export async function PATCH(req: NextRequest) {
-  const { usageIds, status } = await req.json();
+  const { usageIds, status, reason } = await req.json();
   if (!Array.isArray(usageIds) || usageIds.length === 0) {
     return NextResponse.json({ error: "usageIds required" }, { status: 400 });
   }
@@ -16,7 +16,12 @@ export async function PATCH(req: NextRequest) {
   const now = new Date().toISOString();
   await db
     .update(mobileUsages)
-    .set({ sfStatus: status, updatedAt: now })
+    .set({
+      sfStatus: status,
+      // 対応不要に理由を保存、未送信に戻したらクリア
+      sfNoActionReason: status === "対応不要" ? (typeof reason === "string" && reason.trim() ? reason.trim() : null) : null,
+      updatedAt: now,
+    })
     .where(inArray(mobileUsages.id, usageIds));
 
   return NextResponse.json({ ok: true });

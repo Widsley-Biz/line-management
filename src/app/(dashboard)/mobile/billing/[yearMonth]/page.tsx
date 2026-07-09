@@ -46,6 +46,7 @@ export default async function MobileBillingPage({
       sfStatus: mobileUsages.sfStatus,
       sfSentAt: mobileUsages.sfSentAt,
       sfErrorMessage: mobileUsages.sfErrorMessage,
+      sfNoActionReason: mobileUsages.sfNoActionReason,
       importedAt: mobileUsages.importedAt,
     })
     .from(mobileUsages)

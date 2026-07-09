@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { formatYen } from "@/lib/format";
 import { Download, Plus, AlertTriangle } from "lucide-react";
 import { MobileSendSfButton } from "./send-sf-button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,7 @@ type Row = {
   sfStatus: string;
   sfSentAt: string | null;
   sfErrorMessage: string | null;
+  sfNoActionReason: string | null;
   importedAt: string | null;
 };
 
@@ -65,6 +67,8 @@ export function MobileBillingClient({
 
   // 除外処理
   const [excluding, setExcluding] = useState(false);
+  const [excludeDialogOpen, setExcludeDialogOpen] = useState(false);
+  const [excludeReason, setExcludeReason] = useState("");
 
   const pendingRows = rows.filter((r) => r.sfStatus === "未送信" || r.sfStatus === "エラー");
   const pendingIds = pendingRows.map((r) => r.id);
@@ -119,7 +123,7 @@ export function MobileBillingClient({
       await fetch("/api/mobile/billing-status", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ usageIds: Array.from(excludeChecked), status: "対応不要" }),
+        body: JSON.stringify({ usageIds: Array.from(excludeChecked), status: "対応不要", reason: excludeReason }),
       });
       window.location.reload();
     } finally {
@@ -218,6 +222,32 @@ export function MobileBillingClient({
             </Button>
             <Button onClick={() => executeBulkSend(pendingBulkIds)} disabled={bulkSending}>
               {bulkSending ? "送信中..." : "確認して送信"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 対応不要の理由入力ダイアログ */}
+      <Dialog open={excludeDialogOpen} onOpenChange={(o) => { if (!o) setExcludeDialogOpen(false); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{excludeChecked.size}件を対応不要にする</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p className="text-gray-600">理由を入力してください（任意）</p>
+            <Textarea
+              value={excludeReason}
+              onChange={(e) => setExcludeReason(e.target.value)}
+              placeholder="例: 500円未満のため請求対象外"
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExcludeDialogOpen(false)} disabled={excluding}>
+              キャンセル
+            </Button>
+            <Button onClick={handleExclude} disabled={excluding}>
+              {excluding ? "処理中..." : "対応不要にする"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -420,7 +450,7 @@ export function MobileBillingClient({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={handleExclude}
+                onClick={() => { setExcludeReason(""); setExcludeDialogOpen(true); }}
                 disabled={excluding}
                 className="text-gray-600 border-gray-300"
               >
@@ -515,6 +545,11 @@ export function MobileBillingClient({
                             {sfStatusBadge(r.sfStatus)}
                             {r.sfErrorMessage && (
                               <p className="text-xs text-red-600">{r.sfErrorMessage}</p>
+                            )}
+                            {r.sfStatus === "対応不要" && r.sfNoActionReason && (
+                              <p className="text-xs text-gray-400 max-w-48 truncate" title={r.sfNoActionReason}>
+                                {r.sfNoActionReason}
+                              </p>
                             )}
                           </div>
                         </td>

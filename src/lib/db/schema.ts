@@ -42,12 +42,13 @@ export const mobileUsages = sqliteTable(
     totalLines: integer("total_lines").notNull().default(0),
     overageTotal: real("overage_total").notNull().default(0),
     sfStatus: text("sf_status", {
-      enum: ["未送信", "送信済", "エラー", "超過なし"],
+      enum: ["未送信", "送信済", "エラー", "超過なし", "対応不要"],
     })
       .notNull()
       .default("未送信"),
     sfSentAt: text("sf_sent_at"),
     sfErrorMessage: text("sf_error_message"),
+    sfNoActionReason: text("sf_no_action_reason"),
     importedAt: text("imported_at"),
     createdAt: text("created_at")
       .notNull()

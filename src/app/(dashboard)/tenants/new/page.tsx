@@ -12,9 +12,9 @@ import { eq } from "drizzle-orm";
 
 async function createTenant(formData: FormData) {
   "use server";
-  const companyName = formData.get("companyName") as string;
-  const sfOpportunityId = (formData.get("sfOpportunityId") as string) || null;
-  const mfPartnerId = (formData.get("mfPartnerId") as string) || null;
+  const companyName = ((formData.get("companyName") as string) ?? "").trim();
+  const sfOpportunityId = ((formData.get("sfOpportunityId") as string) ?? "").trim();
+  const tenantCode = ((formData.get("slug") as string) ?? "").trim();
   const assigneeId = (formData.get("assigneeId") as string) || null;
   const notes = (formData.get("notes") as string) || null;
 
@@ -22,17 +22,27 @@ async function createTenant(formData: FormData) {
     redirect("/tenants/new?error=required");
   }
 
-  // slugはSF商談IDを自動使用
-  const slug = sfOpportunityId;
+  // 取引先コード未入力ならSF商談IDをフォールバック
+  const slug = tenantCode || sfOpportunityId;
 
-  const existing = await db
+  const duplicateSf = await db
+    .select({ id: tenants.id })
+    .from(tenants)
+    .where(eq(tenants.sfOpportunityId, sfOpportunityId))
+    .get();
+
+  if (duplicateSf) {
+    redirect("/tenants/new?error=duplicate-sf");
+  }
+
+  const duplicateSlug = await db
     .select({ id: tenants.id })
     .from(tenants)
     .where(eq(tenants.slug, slug))
     .get();
 
-  if (existing) {
-    redirect(`/tenants/new?error=duplicate-slug&sfOpportunityId=${encodeURIComponent(sfOpportunityId)}`);
+  if (duplicateSlug) {
+    redirect("/tenants/new?error=duplicate-slug");
   }
 
   const now = new Date().toISOString();
@@ -43,7 +53,6 @@ async function createTenant(formData: FormData) {
     slug,
     companyName,
     sfOpportunityId,
-    mfPartnerId,
     assigneeId: assigneeId || null,
     status: "active",
     notes,
@@ -56,7 +65,8 @@ async function createTenant(formData: FormData) {
 
 const ERROR_MESSAGES: Record<string, string> = {
   required: "会社名とSF商談IDは必須です。",
-  "duplicate-slug": "このSF商談IDはすでに登録されています。",
+  "duplicate-sf": "このSF商談IDはすでに登録されています。",
+  "duplicate-slug": "この取引先コードはすでに登録されています。",
 };
 
 export default async function NewTenantPage({
@@ -101,6 +111,14 @@ export default async function NewTenantPage({
                 />
               </div>
               <div className="space-y-1">
+                <Label htmlFor="slug">取引先コード</Label>
+                <Input id="slug" name="slug" />
+                <p className="text-xs text-gray-400">未入力の場合はSF商談IDが自動設定されます</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
                 <Label htmlFor="sfOpportunityId">SF商談ID *</Label>
                 <Input
                   id="sfOpportunityId"
@@ -109,13 +127,6 @@ export default async function NewTenantPage({
                   required
                 />
                 <p className="text-xs text-gray-400">SF上のCaseSafeID</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label htmlFor="mfPartnerId">MFパートナーID</Label>
-                <Input id="mfPartnerId" name="mfPartnerId" />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="assigneeId">担当者</Label>

@@ -2,16 +2,16 @@
 import { db } from "@/lib/db";
 import {
   tenants,
-  tenantAssignments,
-  tenantPacks,
-  monthlyUsages,
   mobileLines,
   mobileUsages,
   mobileUsageDetails,
-  callLogs,
+  ipNumbers,
+  ipUsages,
+  ipUsageDetails,
+  ipTariffs,
   actions,
 } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 export async function deleteTenant(id: string) {
@@ -25,11 +25,23 @@ export async function deleteTenant(id: string) {
   }
   await db.delete(mobileUsages).where(eq(mobileUsages.tenantId, id));
   await db.delete(mobileLines).where(eq(mobileLines.tenantId, id));
-  await db.delete(callLogs).where(eq(callLogs.tenantId, id));
-  await db.delete(monthlyUsages).where(eq(monthlyUsages.tenantId, id));
-  await db.delete(tenantAssignments).where(eq(tenantAssignments.tenantId, id));
-  await db.delete(tenantPacks).where(eq(tenantPacks.tenantId, id));
+  await db.delete(ipUsageDetails).where(eq(ipUsageDetails.tenantId, id));
+  await db.delete(ipUsages).where(eq(ipUsages.tenantId, id));
+  await db.delete(ipNumbers).where(eq(ipNumbers.tenantId, id));
+  await db.delete(ipTariffs).where(eq(ipTariffs.tenantId, id));
   await db.delete(actions).where(eq(actions.tenantId, id));
+
+  // 旧IP回線構造の残存データ（Phase Eのテーブル削除まではFK制約が残るため）
+  for (const table of ["call_logs", "monthly_usages", "tenant_assignments", "tenant_packs", "channel_groups"]) {
+    try {
+      await db.run(
+        sql.raw(`DELETE FROM ${table} WHERE tenant_id = '${id.replace(/'/g, "''")}'`)
+      );
+    } catch {
+      // テーブルが既に削除済みの場合は無視
+    }
+  }
+
   await db.delete(tenants).where(eq(tenants.id, id));
 
   revalidatePath("/tenants");

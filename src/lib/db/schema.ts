@@ -114,6 +114,7 @@ export const users = sqliteTable("users", {
 
 // ============================================================
 // Billing Accounts（請求アカウント）
+// ※ 旧IP回線構造。ip_numbers への初期データ移行（Phase E）完了後に削除する
 // ============================================================
 export const billingAccounts = sqliteTable("billing_accounts", {
   id: text("id").primaryKey(),
@@ -156,7 +157,136 @@ export const tenants = sqliteTable("tenants", {
 });
 
 // ============================================================
+// IP Numbers（IP回線番号マスタ：表番号・裏番号）
+// ============================================================
+export const ipNumbers = sqliteTable(
+  "ip_numbers",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    phoneNumber: text("phone_number").notNull().unique(),
+    subNumber: text("sub_number"), // 裏番号（フリーダイヤル）NULL可
+    status: text("status", { enum: ["契約中", "解約済"] })
+      .notNull()
+      .default("契約中"),
+    notes: text("notes"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [index("idx_ip_numbers_tenant").on(t.tenantId)]
+);
+
+// ============================================================
+// IP Tariffs（タリフ設定：tenant_id NULL = デフォルト）
+// ============================================================
+export const ipTariffs = sqliteTable(
+  "ip_tariffs",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").references(() => tenants.id), // NULL = デフォルトタリフ
+    fixedRate: real("fixed_rate").notNull().default(0.06),        // ①固定 円/秒
+    mobileRate: real("mobile_rate").notNull().default(0.25),      // ②携帯 円/秒
+    naviSecRate: real("navi_sec_rate").notNull().default(1.2),    // ③ナビ秒課金 円/秒
+    naviAmountRate: real("navi_amount_rate").notNull().default(10.5), // ④ナビ金額課金 倍率
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [index("idx_ip_tariffs_tenant").on(t.tenantId)]
+);
+
+// ============================================================
+// IP Usages（IP月次通話料）
+// ============================================================
+export const ipUsages = sqliteTable(
+  "ip_usages",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    yearMonth: text("year_month").notNull(),
+    fixedAmount: real("fixed_amount").notNull().default(0),        // 固定分（SF商品①・切り上げ後）
+    mobileNaviAmount: real("mobile_navi_amount").notNull().default(0), // 携帯＋ナビ分（SF商品②・切り上げ後）
+    totalAmount: real("total_amount").notNull().default(0),        // ①＋②の総合計
+    sfStatus: text("sf_status", {
+      enum: ["未送信", "送信済", "エラー", "対応不要"],
+    })
+      .notNull()
+      .default("未送信"),
+    sfSentAt: text("sf_sent_at"),
+    sfErrorMessage: text("sf_error_message"),
+    importedAt: text("imported_at"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [index("idx_ip_usages_tenant_month").on(t.tenantId, t.yearMonth)]
+);
+
+// ============================================================
+// IP Usage Details（番号×通話種別の内訳）
+// ============================================================
+export const ipUsageDetails = sqliteTable(
+  "ip_usage_details",
+  {
+    id: text("id").primaryKey(),
+    ipUsageId: text("ip_usage_id")
+      .notNull()
+      .references(() => ipUsages.id),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    phoneNumber: text("phone_number").notNull(),
+    callCategory: text("call_category", {
+      enum: ["固定", "携帯", "ナビ秒", "ナビ金額"],
+    }).notNull(),
+    callTypeName: text("call_type_name").notNull(), // H列の通話種別名称
+    totalSeconds: integer("total_seconds").notNull().default(0),
+    sourceAmount: real("source_amount").notNull().default(0), // O列金額合計（ナビ金額用）
+    computedAmount: real("computed_amount").notNull().default(0), // タリフ計算後金額（小数のまま）
+    yearMonth: text("year_month").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [
+    index("idx_ip_usage_details_usage").on(t.ipUsageId),
+    index("idx_ip_usage_details_tenant").on(t.tenantId),
+    index("idx_ip_usage_details_month").on(t.yearMonth),
+  ]
+);
+
+// ============================================================
+// IP Import Files（CDR取込履歴・重複判定）
+// ============================================================
+export const ipImportFiles = sqliteTable("ip_import_files", {
+  id: text("id").primaryKey(),
+  fileName: text("file_name").notNull(),
+  fileHash: text("file_hash").notNull().unique(),
+  billingAccount: text("billing_account"),
+  yearMonth: text("year_month"),
+  rowCount: integer("row_count").notNull().default(0),
+  importedAt: text("imported_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+// ============================================================
 // Channel Groups（チャンネルグループ）
+// ※ 旧IP回線構造。ip_numbers への初期データ移行（Phase E）完了後に削除する
 // ============================================================
 export const channelGroups = sqliteTable(
   "channel_groups",
@@ -187,6 +317,7 @@ export const channelGroups = sqliteTable(
 
 // ============================================================
 // Phone Numbers（電話番号 / チャンネル）
+// ※ 旧IP回線構造。ip_numbers への初期データ移行（Phase E）完了後に削除する
 // ============================================================
 export const phoneNumbers = sqliteTable(
   "phone_numbers",
@@ -214,6 +345,7 @@ export const phoneNumbers = sqliteTable(
 
 // ============================================================
 // Tenant Assignments（テナント割り当て）
+// ※ 旧IP回線構造。ip_numbers への初期データ移行（Phase E）完了後に削除する
 // ============================================================
 export const tenantAssignments = sqliteTable(
   "tenant_assignments",
@@ -249,95 +381,6 @@ export const tenantAssignments = sqliteTable(
 );
 
 // ============================================================
-// Packs（パックマスタ）
-// ============================================================
-export const packs = sqliteTable("packs", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  sfProductCode: text("sf_product_code").notNull().unique(),
-  price: integer("price").notNull(),
-  credit: integer("credit").notNull(),
-  bonusRate: real("bonus_rate").notNull(),
-  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
-  sortOrder: integer("sort_order").notNull().default(0),
-});
-
-// ============================================================
-// Tenant Packs（テナントパック設定）
-// ============================================================
-export const tenantPacks = sqliteTable(
-  "tenant_packs",
-  {
-    id: text("id").primaryKey(),
-    tenantId: text("tenant_id")
-      .notNull()
-      .references(() => tenants.id),
-    packId: text("pack_id")
-      .notNull()
-      .references(() => packs.id),
-    quantity: integer("quantity").notNull().default(1),
-    startMonth: text("start_month").notNull(),
-    endMonth: text("end_month"),
-    createdAt: text("created_at")
-      .notNull()
-      .default(sql`(datetime('now'))`),
-  },
-  (t) => [index("idx_tenant_packs_tenant").on(t.tenantId)]
-);
-
-// ============================================================
-// Monthly Usages（月次使用量）
-// ============================================================
-export const monthlyUsages = sqliteTable(
-  "monthly_usages",
-  {
-    id: text("id").primaryKey(),
-    tenantId: text("tenant_id")
-      .notNull()
-      .references(() => tenants.id),
-    yearMonth: text("year_month").notNull(),
-
-    fixedSeconds: integer("fixed_seconds").notNull().default(0),
-    mobileSeconds: integer("mobile_seconds").notNull().default(0),
-    rawCost: real("raw_cost").notNull().default(0),
-
-    ipCallCharge: real("ip_call_charge").notNull().default(0),
-    fixedCallCharge: real("fixed_call_charge").notNull().default(0),
-    mobileCallCharge: real("mobile_call_charge").notNull().default(0),
-
-    totalPackPrice: integer("total_pack_price").notNull().default(0),
-    totalCredit: integer("total_credit").notNull().default(0),
-    usedCredit: real("used_credit").notNull().default(0),
-
-    overageCharge: real("overage_charge").notNull().default(0),
-    overageFixed: real("overage_fixed").notNull().default(0),
-    overageMobile: real("overage_mobile").notNull().default(0),
-
-    grossProfit: real("gross_profit").notNull().default(0),
-
-    sfStatus: text("sf_status", {
-      enum: ["未送信", "送信済", "エラー", "超過なし", "対応不要"],
-    })
-      .notNull()
-      .default("未送信"),
-    sfSentAt: text("sf_sent_at"),
-    sfErrorMessage: text("sf_error_message"),
-
-    dataSource: text("data_source"),
-    importedAt: text("imported_at"),
-    createdAt: text("created_at")
-      .notNull()
-      .default(sql`(datetime('now'))`),
-    updatedAt: text("updated_at")
-      .notNull()
-      .default(sql`(datetime('now'))`),
-  },
-  (t) => [
-    index("idx_monthly_usages_tenant_month").on(t.tenantId, t.yearMonth),
-  ]
-);
-
-// ============================================================
 // Actions（アクション管理）
 // ============================================================
 export const actions = sqliteTable(
@@ -363,36 +406,6 @@ export const actions = sqliteTable(
       .default(sql`(datetime('now'))`),
   },
   (t) => [index("idx_actions_tenant").on(t.tenantId)]
-);
-
-// ============================================================
-// Call Logs（通話ログ）
-// ============================================================
-export const callLogs = sqliteTable(
-  "call_logs",
-  {
-    id: text("id").primaryKey(),
-    tenantId: text("tenant_id")
-      .notNull()
-      .references(() => tenants.id),
-    yearMonth: text("year_month").notNull(),
-    callDate: text("call_date"),
-    phoneNumber: text("phone_number"),
-    destinationNumber: text("destination_number"),
-    destinationType: text("destination_type", {
-      enum: ["固定", "携帯"],
-    }).notNull(),
-    durationSeconds: integer("duration_seconds").notNull().default(0),
-    cost: real("cost").notNull().default(0),
-    source: text("source", { enum: ["AdjustOne", "ProDelight", "手動入力"] }).notNull(),
-    importedAt: text("imported_at")
-      .notNull()
-      .default(sql`(datetime('now'))`),
-  },
-  (t) => [
-    index("idx_call_logs_tenant_month").on(t.tenantId, t.yearMonth),
-    index("idx_call_logs_source").on(t.source),
-  ]
 );
 
 // ============================================================

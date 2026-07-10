@@ -20,8 +20,8 @@ type TenantRow = {
   companyName: string;
   status: string;
   assigneeName: string | null;
-  packCount: number;
-  allocatedCh: number;
+  ipNumberCount: number;
+  mobileLineCount: number;
 };
 
 export function TenantsTable({ rows }: { rows: TenantRow[] }) {
@@ -74,7 +74,7 @@ export function TenantsTable({ rows }: { rows: TenantRow[] }) {
             <DialogTitle>取引先を削除しますか？</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-gray-600">
-            <span className="font-semibold">{deleteTarget?.companyName}</span> を削除します。関連するデータ（回線・請求・パック等）もすべて削除されます。この操作は取り消せません。
+            <span className="font-semibold">{deleteTarget?.companyName}</span> を削除します。関連するデータ（回線・請求・タリフ等）もすべて削除されます。この操作は取り消せません。
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={isPending}>
@@ -106,8 +106,8 @@ export function TenantsTable({ rows }: { rows: TenantRow[] }) {
               <SortableHeader label="取引先コード" column="slug" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
               <SortableHeader label="担当者" column="assigneeName" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
               <SortableHeader label="ステータス" column="status" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={thCls} />
-              <SortableHeader label="パック数" column="packCount" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={`${thCls} text-right`} />
-              <SortableHeader label="割り当てch" column="allocatedCh" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={`${thCls} text-right`} />
+              <SortableHeader label="IP番号数" column="ipNumberCount" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={`${thCls} text-right`} />
+              <SortableHeader label="携帯回線数" column="mobileLineCount" currentSort={sortCol} currentDir={sortDir} onSort={handleSort} className={`${thCls} text-right`} />
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -134,8 +134,8 @@ export function TenantsTable({ rows }: { rows: TenantRow[] }) {
                     {t.status === "active" ? "有効" : "解約"}
                   </Badge>
                 </td>
-                <td className="px-4 py-3 text-right">{t.packCount}</td>
-                <td className="px-4 py-3 text-right">{t.allocatedCh} ch</td>
+                <td className="px-4 py-3 text-right">{t.ipNumberCount}</td>
+                <td className="px-4 py-3 text-right">{t.mobileLineCount}</td>
                 <td className="px-4 py-3 text-right">
                   <button
                     onClick={() => setDeleteTarget(t)}

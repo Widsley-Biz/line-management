@@ -11,11 +11,7 @@
     "db:migrate": "tsx src/lib/db/migrate.ts",
     "db:seed": "tsx src/lib/db/seed.ts",
     "db:studio": "drizzle-kit studio",
-    "db:migrate-linelist": "tsx src/lib/db/migrate-linelist.ts",
-    "db:migrate-sf": "tsx src/lib/db/migrate-sf-report.ts",
-    "db:migrate-ip-contracts": "tsx src/lib/db/migrate-ip-contracts.ts",
     "db:migrate-ad1": "tsx src/lib/db/migrate-ad1-sheet.ts",
-    "db:migrate-sf-customers": "tsx src/lib/db/migrate-sf-customers.ts",
     "db:link-groups": "tsx src/lib/db/link-channel-groups.ts"
   },
   "dependencies": {

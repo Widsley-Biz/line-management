@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, FileText, Loader2, Smartphone, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Upload, FileText, Loader2, Smartphone, CheckCircle2, AlertTriangle, X, Network } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -14,27 +14,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-
-interface PreviewRow {
-  companyName: string;
-  destinationType: string;
-  durationSeconds: number;
-  cost: number;
-  callDate: string;
-  phoneNumber: string;
-}
-
-interface SoftBankPreviewRow {
-  phoneNumber: string;
-  planName: string;
-  overageTotal: number;
-}
-
-interface ImportResult {
-  success: number;
-  unmatched: string[];
-  errors: string[];
-}
 
 interface SoftBankImportResult {
   success: number;
@@ -53,92 +32,69 @@ type UnknownClassification = {
   skip: boolean;
 };
 
+type CdrUnmatchedNumber = {
+  phoneNumber: string;
+  rowCount: number;
+  totalSeconds: number;
+};
+
+type CdrFileResult = {
+  fileName: string;
+  status: "imported" | "skipped" | "error";
+  message?: string;
+  yearMonth?: string;
+  billingAccount?: string;
+  rowCount?: number;
+  importedRows?: number;
+  tenantCount?: number;
+  unmatchedNumbers?: CdrUnmatchedNumber[];
+  unknownCallTypes?: string[];
+};
+
 export function ImportForm() {
   const [yearMonth, setYearMonth] = useState("");
-  const [adjustOneFile, setAdjustOneFile] = useState<File | null>(null);
-  const [proDelightFile, setProDelightFile] = useState<File | null>(null);
+  const [cdrFiles, setCdrFiles] = useState<File[]>([]);
   const [softBankFile, setSoftBankFile] = useState<File | null>(null);
-  const [adjustOnePreview, setAdjustOnePreview] = useState<PreviewRow[]>([]);
-  const [proDelightPreview, setProDelightPreview] = useState<PreviewRow[]>([]);
-  const [softBankPreview, setSoftBankPreview] = useState<SoftBankPreviewRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{
-    adjustOne?: ImportResult;
-    proDelight?: ImportResult;
-    softBank?: SoftBankImportResult;
-  } | null>(null);
+  const [cdrResults, setCdrResults] = useState<CdrFileResult[] | null>(null);
+  const [sbResult, setSbResult] = useState<SoftBankImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // SoftBank課金項目確認ダイアログ
   const [sbPreview, setSbPreview] = useState<SbPreview | null>(null);
   const [unknownClassifications, setUnknownClassifications] = useState<UnknownClassification[]>([]);
 
-  const parseAdjustOneCsv = (text: string): PreviewRow[] => {
-    const lines = text.split("\n").filter((l) => l.trim());
-    if (lines.length < 2) return [];
-    return lines.slice(1, 11).map((line) => {
-      const cols = line.split(",");
-      return {
-        companyName: cols[16]?.trim() ?? "",
-        destinationType: cols[7]?.trim().includes("携帯") ? "携帯" : "固定",
-        durationSeconds: parseInt(cols[13]?.trim() ?? "0", 10) || 0,
-        cost: parseFloat(cols[14]?.trim() ?? "0") || 0,
-        callDate: cols[9]?.trim() ?? "",
-        phoneNumber: cols[5]?.trim() ?? "",
-      };
+  const handleCdrFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    // 既存の選択に追加（同名は置き換え）
+    setCdrFiles((prev) => {
+      const names = new Set(files.map((f) => f.name));
+      return [...prev.filter((f) => !names.has(f.name)), ...files];
     });
+    setCdrResults(null);
+    e.target.value = "";
   };
 
-  const parseProDelightCsv = (text: string): PreviewRow[] => {
-    const lines = text.split("\n").filter((l) => l.trim());
-    if (lines.length < 2) return [];
-    return lines.slice(1, 11).map((line) => {
-      const cols = line.split(",");
-      return {
-        companyName: cols[3]?.trim() ?? "",
-        destinationType: cols[5]?.trim().includes("携帯") ? "携帯" : "固定",
-        durationSeconds: parseInt(cols[7]?.trim() ?? "0", 10) || 0,
-        cost: parseFloat(cols[8]?.trim() ?? "0") || 0,
-        callDate: (cols[6]?.trim() ?? "").split(" ")[0] ?? "",
-        phoneNumber: cols[3]?.trim() ?? "",
-      };
-    });
+  const removeCdrFile = (name: string) => {
+    setCdrFiles((prev) => prev.filter((f) => f.name !== name));
   };
 
   const handleSoftBankFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
     if (!file) return;
     setSoftBankFile(file);
-    setSoftBankPreview([]);
-  };
-
-  const handleFileChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
-    source: "adjustOne" | "proDelight"
-  ) => {
-    const file = e.target.files?.[0] ?? null;
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      const preview =
-        source === "adjustOne"
-          ? parseAdjustOneCsv(text)
-          : parseProDelightCsv(text);
-      if (source === "adjustOne") {
-        setAdjustOneFile(file);
-        setAdjustOnePreview(preview);
-      } else {
-        setProDelightFile(file);
-        setProDelightPreview(preview);
-      }
-    };
-    reader.readAsText(file, "UTF-8");
   };
 
   const handleImport = async () => {
-    if (!yearMonth) { setError("利用年月を入力してください"); return; }
-    if (!adjustOneFile && !proDelightFile && !softBankFile) { setError("CSVファイルを選択してください"); return; }
+    if (!cdrFiles.length && !softBankFile) {
+      setError("ファイルを選択してください");
+      return;
+    }
+    if (softBankFile && !yearMonth) {
+      setError("SoftBankファイルの取込には利用年月の入力が必要です");
+      return;
+    }
 
     setError(null);
 
@@ -172,28 +128,43 @@ export function ImportForm() {
       return;
     }
 
-    // SoftBankなし（IP回線のみ）はそのまま取込
+    // CDRのみの場合はそのまま取込
     await runActualImport();
   };
 
   const runActualImport = async () => {
     setLoading(true);
     setError(null);
-    setResult(null);
+    setCdrResults(null);
+    setSbResult(null);
 
     try {
-      const fd = new FormData();
-      fd.append("yearMonth", yearMonth);
-      if (adjustOneFile) fd.append("adjustOne", adjustOneFile);
-      if (proDelightFile) fd.append("proDelight", proDelightFile);
-      if (softBankFile) fd.append("softBank", softBankFile);
+      // CDR CSV（IP回線）
+      if (cdrFiles.length > 0) {
+        const fd = new FormData();
+        for (const f of cdrFiles) fd.append("files", f);
+        const res = await fetch("/api/ip/import", { method: "POST", body: fd });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error ?? "CDRインポートに失敗しました");
+        } else {
+          setCdrResults(data.results ?? []);
+          setCdrFiles([]);
+        }
+      }
 
-      const res = await fetch("/api/billing/import", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "インポートに失敗しました");
-      } else {
-        setResult(data);
+      // SoftBank（携帯回線）
+      if (softBankFile) {
+        const fd = new FormData();
+        fd.append("yearMonth", yearMonth);
+        fd.append("softBank", softBankFile);
+        const res = await fetch("/api/billing/import", { method: "POST", body: fd });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error ?? "SoftBankインポートに失敗しました");
+        } else {
+          setSbResult(data.softBank ?? null);
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "エラーが発生しました");
@@ -322,129 +293,57 @@ export function ImportForm() {
         </DialogContent>
       </Dialog>
 
-      {/* Year Month */}
-      <Card>
+      {/* CDR CSV（IP回線） */}
+      <Card className="border-indigo-200">
         <CardHeader>
-          <CardTitle>利用年月</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Network className="h-5 w-5 text-indigo-600" />
+            CDR 通話明細CSV
+            <Badge variant="secondary" className="text-xs">IP回線</Badge>
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-1 max-w-xs">
-            <Label htmlFor="yearMonth">利用年月 *</Label>
-            <Input
-              id="yearMonth"
-              type="month"
-              value={yearMonth}
-              onChange={(e) => setYearMonth(e.target.value)}
-              required
-            />
+        <CardContent className="space-y-4">
+          <div className="text-xs text-gray-500 space-y-1">
+            <p>※ 複数ファイルを同時にアップロードできます（1ファイル = 1請求アカウント）。利用月はファイル内の「利用月」列から自動判定されます。</p>
+            <p>※ 取り込みは<span className="font-medium text-gray-700">差分投入</span>です。まったく同じファイルは自動でスキップされ、同一の請求アカウント×利用月で内容が異なるファイルは追加分として加算・再集計されます。</p>
           </div>
+          <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-indigo-200 rounded-lg cursor-pointer hover:border-indigo-400 transition-colors">
+            <Upload className="h-6 w-6 text-indigo-400 mb-1" />
+            <span className="text-sm text-gray-500">
+              クリックしてファイルを選択（.csv / 複数可）
+            </span>
+            <input
+              type="file"
+              accept=".csv"
+              multiple
+              className="hidden"
+              onChange={handleCdrFilesChange}
+            />
+          </label>
+          {cdrFiles.length > 0 && (
+            <div className="space-y-1">
+              {cdrFiles.map((f) => (
+                <div key={f.name} className="flex items-center justify-between p-2 bg-indigo-50 rounded border border-indigo-100">
+                  <p className="text-xs text-indigo-800 font-mono flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5" />
+                    {f.name}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => removeCdrFile(f.name)}
+                    className="text-gray-400 hover:text-red-500"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              <p className="text-xs text-gray-400">{cdrFiles.length}ファイル選択中</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* IP回線 CSV */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              AdjustOne CSV
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 transition-colors">
-              <Upload className="h-6 w-6 text-gray-400 mb-1" />
-              <span className="text-sm text-gray-500">
-                {adjustOneFile ? adjustOneFile.name : "クリックしてファイルを選択"}
-              </span>
-              <input
-                type="file"
-                accept=".xlsx,.csv"
-                className="hidden"
-                onChange={(e) => handleFileChange(e, "adjustOne")}
-              />
-            </label>
-            {adjustOnePreview.length > 0 && (
-              <div>
-                <p className="text-xs text-gray-500 mb-2">プレビュー（最初の10行）</p>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-1 text-gray-500">会社名</th>
-                        <th className="text-left py-1 text-gray-500">種別</th>
-                        <th className="text-right py-1 text-gray-500">秒数</th>
-                        <th className="text-right py-1 text-gray-500">金額</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {adjustOnePreview.map((row, i) => (
-                        <tr key={i} className="border-b">
-                          <td className="py-1 truncate max-w-24">{row.companyName}</td>
-                          <td className="py-1">{row.destinationType}</td>
-                          <td className="py-1 text-right">{row.durationSeconds}s</td>
-                          <td className="py-1 text-right">¥{row.cost}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              ProDelight CSV
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 transition-colors">
-              <Upload className="h-6 w-6 text-gray-400 mb-1" />
-              <span className="text-sm text-gray-500">
-                {proDelightFile ? proDelightFile.name : "クリックしてファイルを選択"}
-              </span>
-              <input
-                type="file"
-                accept=".xlsx,.csv"
-                className="hidden"
-                onChange={(e) => handleFileChange(e, "proDelight")}
-              />
-            </label>
-            {proDelightPreview.length > 0 && (
-              <div>
-                <p className="text-xs text-gray-500 mb-2">プレビュー（最初の10行）</p>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-1 text-gray-500">発信番号</th>
-                        <th className="text-left py-1 text-gray-500">種別</th>
-                        <th className="text-right py-1 text-gray-500">秒数</th>
-                        <th className="text-right py-1 text-gray-500">金額</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {proDelightPreview.map((row, i) => (
-                        <tr key={i} className="border-b">
-                          <td className="py-1 font-mono">{row.phoneNumber}</td>
-                          <td className="py-1">{row.destinationType}</td>
-                          <td className="py-1 text-right">{row.durationSeconds}s</td>
-                          <td className="py-1 text-right">¥{row.cost}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* SoftBank Excel */}
+      {/* SoftBank Excel（携帯回線） */}
       <Card className="border-blue-200">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -457,6 +356,15 @@ export function ImportForm() {
           <p className="text-xs text-gray-500">
             ※ 取り込みは<span className="font-medium text-gray-700">差分マージ</span>です。ファイルに含まれる回線（電話番号）の明細だけが更新され、含まれない回線の取り込み済みデータは保持されます。同じファイルを再取り込みしても二重計上はされません。
           </p>
+          <div className="space-y-1 max-w-xs">
+            <Label htmlFor="yearMonth">利用年月（SoftBank取込時必須）</Label>
+            <Input
+              id="yearMonth"
+              type="month"
+              value={yearMonth}
+              onChange={(e) => setYearMonth(e.target.value)}
+            />
+          </div>
           <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-blue-200 rounded-lg cursor-pointer hover:border-blue-400 transition-colors">
             <Upload className="h-6 w-6 text-blue-400 mb-1" />
             <span className="text-sm text-gray-500">
@@ -488,75 +396,98 @@ export function ImportForm() {
         </div>
       )}
 
-      {result && (
+      {(cdrResults || sbResult) && (
         <Card>
           <CardHeader>
             <CardTitle>インポート結果</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {result.adjustOne && (
-              <div>
-                <p className="text-sm font-medium mb-1">AdjustOne</p>
-                <div className="flex gap-3">
-                  <Badge variant="default">成功: {result.adjustOne.success}件</Badge>
-                  {result.adjustOne.unmatched.length > 0 && (
-                    <Badge variant="secondary">未照合: {result.adjustOne.unmatched.length}件</Badge>
-                  )}
-                </div>
-                {result.adjustOne.unmatched.length > 0 && (
-                  <div className="mt-2 max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
-                    {result.adjustOne.unmatched.map((u, i) => (
-                      <p key={i} className="text-xs text-amber-800 font-mono">{u}</p>
-                    ))}
+            {cdrResults && cdrResults.map((r) => (
+              <div key={r.fileName} className="border-b last:border-0 pb-4 last:pb-0">
+                <p className="text-sm font-medium mb-1 flex items-center gap-1">
+                  <Network className="h-4 w-4 text-indigo-600" />
+                  {r.fileName}
+                  {r.yearMonth && <span className="text-xs text-gray-400 ml-1">（利用月: {r.yearMonth}）</span>}
+                </p>
+                {r.status === "skipped" ? (
+                  <div className="flex items-start gap-2">
+                    <Badge variant="outline" className="text-gray-500">スキップ</Badge>
+                    <p className="text-xs text-gray-500 mt-0.5">{r.message}</p>
                   </div>
+                ) : r.status === "error" ? (
+                  <div className="flex items-start gap-2">
+                    <Badge variant="destructive">エラー</Badge>
+                    <p className="text-xs text-red-600 mt-0.5">{r.message}</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-3 flex-wrap">
+                      <Badge variant="default">取込 {r.importedRows}件</Badge>
+                      <Badge variant="secondary">取引先 {r.tenantCount}社</Badge>
+                      {(r.unmatchedNumbers?.length ?? 0) > 0 && (
+                        <Badge variant="outline" className="border-amber-400 text-amber-700">
+                          未紐付け {r.unmatchedNumbers!.length}番号
+                        </Badge>
+                      )}
+                    </div>
+                    {(r.unmatchedNumbers?.length ?? 0) > 0 && (
+                      <div className="mt-2">
+                        <p className="text-xs font-medium text-amber-700 mb-1">
+                          未紐付け番号（{r.unmatchedNumbers!.length}件）— IP回線マスタで表番号または裏番号を登録して再取込してください
+                        </p>
+                        <div className="max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
+                          {r.unmatchedNumbers!.map((u, i) => (
+                            <p key={i} className="text-xs text-amber-800 font-mono">
+                              {u.phoneNumber}（{u.rowCount}行 / {u.totalSeconds}秒）
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {(r.unknownCallTypes?.length ?? 0) > 0 && (
+                      <div className="mt-2">
+                        <p className="text-xs font-medium text-gray-500 mb-1">
+                          未対応の通話種別（取込対象外・{r.unknownCallTypes!.length}件）
+                        </p>
+                        <div className="max-h-24 overflow-y-auto bg-gray-50 border border-gray-200 rounded p-2">
+                          {r.unknownCallTypes!.map((t, i) => (
+                            <p key={i} className="text-xs text-gray-600">{t}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
-            )}
-            {result.proDelight && (
-              <div>
-                <p className="text-sm font-medium mb-1">ProDelight</p>
-                <div className="flex gap-3">
-                  <Badge variant="default">成功: {result.proDelight.success}件</Badge>
-                  {result.proDelight.unmatched.length > 0 && (
-                    <Badge variant="secondary">未照合: {result.proDelight.unmatched.length}件</Badge>
-                  )}
-                </div>
-                {result.proDelight.unmatched.length > 0 && (
-                  <div className="mt-2 max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
-                    {result.proDelight.unmatched.map((u, i) => (
-                      <p key={i} className="text-xs text-amber-800 font-mono">{u}</p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            {result.softBank && (
+            ))}
+
+            {sbResult && (
               <div>
                 <p className="text-sm font-medium mb-1 flex items-center gap-1">
                   <Smartphone className="h-4 w-4 text-blue-600" />
                   SoftBank 携帯回線
                 </p>
-                {result.softBank.errors && result.softBank.errors.length > 0 ? (
+                {sbResult.errors && sbResult.errors.length > 0 ? (
                   <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                    {result.softBank.errors.map((e, i) => (
+                    {sbResult.errors.map((e, i) => (
                       <p key={i} className="text-xs text-red-700">{e}</p>
                     ))}
                   </div>
                 ) : (
                   <>
                     <div className="flex gap-3">
-                      <Badge variant="default">成功: {result.softBank.success}件</Badge>
-                      {result.softBank.unmatched.length > 0 && (
-                        <Badge variant="secondary">未照合: {result.softBank.unmatched.length}件</Badge>
+                      <Badge variant="default">成功: {sbResult.success}件</Badge>
+                      {sbResult.unmatched.length > 0 && (
+                        <Badge variant="secondary">未照合: {sbResult.unmatched.length}件</Badge>
                       )}
                     </div>
-                    {result.softBank.unmatched.length > 0 && (
+                    {sbResult.unmatched.length > 0 && (
                       <div className="mt-2">
                         <p className="text-xs font-medium text-amber-700 mb-1">
-                          未照合電話番号（{result.softBank.unmatched.length}件）— マスタ管理で登録してください
+                          未照合電話番号（{sbResult.unmatched.length}件）— マスタ管理で登録してください
                         </p>
                         <div className="max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
-                          {result.softBank.unmatched.map((u, i) => (
+                          {sbResult.unmatched.map((u, i) => (
                             <p key={i} className="text-xs text-amber-800 font-mono">{u}</p>
                           ))}
                         </div>

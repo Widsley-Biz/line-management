@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
-  callLogs,
   tenants,
-  phoneNumbers,
   mobileUsages,
   mobileUsageDetails,
   mobileBillingItems,
@@ -11,7 +9,6 @@ import {
 } from "@/lib/db/schema";
 import { eq, sql, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { calculateMonthlyBilling } from "@/lib/billing";
 import { logActivity } from "@/lib/audit";
 
 interface ImportResult {
@@ -26,186 +23,6 @@ type SoftBankResult = ImportResult & {
     unknownItems: string[];
   };
 };
-
-async function importAdjustOne(
-  text: string,
-  yearMonth: string
-): Promise<ImportResult> {
-  const lines = text.split("\n").filter((l) => l.trim());
-  if (lines.length < 2) return { success: 0, unmatched: [], errors: [] };
-
-  const allTenants = await db
-    .select({ id: tenants.id, companyName: tenants.companyName })
-    .from(tenants);
-
-  const tenantMap = new Map(allTenants.map((t) => [t.companyName.trim(), t.id]));
-
-  const now = new Date().toISOString();
-  let success = 0;
-  const unmatched = new Set<string>();
-  const errors: string[] = [];
-  const affectedTenants = new Set<string>();
-
-  const dataLines = lines.slice(1);
-  const batchSize = 100;
-
-  for (let i = 0; i < dataLines.length; i += batchSize) {
-    const batch = dataLines.slice(i, i + batchSize);
-    const inserts = [];
-
-    for (const line of batch) {
-      const cols = parseCsvLine(line);
-      if (cols.length < 17) continue;
-
-      const callTypeName = cols[7]?.trim() ?? "";
-      const destinationType: "固定" | "携帯" = callTypeName.includes("携帯") ? "携帯" : "固定";
-      const durationSeconds = parseInt(cols[13]?.trim() ?? "0", 10) || 0;
-      const cost = parseFloat(cols[14]?.trim() ?? "0") || 0;
-      const callDate = cols[9]?.trim() ?? "";
-      const phoneNumber = cols[5]?.trim() ?? "";
-      const destinationNumber = cols[8]?.trim() ?? "";
-      const companyName = cols[16]?.trim() ?? "";
-
-      if (!companyName) continue;
-
-      const tenantId = tenantMap.get(companyName);
-      if (!tenantId) {
-        unmatched.add(companyName);
-        continue;
-      }
-
-      inserts.push({
-        id: randomUUID(),
-        tenantId,
-        yearMonth,
-        callDate,
-        phoneNumber,
-        destinationNumber,
-        destinationType,
-        durationSeconds,
-        cost,
-        source: "AdjustOne" as const,
-        importedAt: now,
-      });
-      affectedTenants.add(tenantId);
-      success++;
-    }
-
-    if (inserts.length > 0) {
-      await db.insert(callLogs).values(inserts);
-    }
-  }
-
-  for (const tenantId of affectedTenants) {
-    await calculateMonthlyBilling(tenantId, yearMonth);
-  }
-
-  await logActivity({
-    actionType: "import",
-    message: `AdjustOne CSVインポート完了: 成功${success}件、未照合${unmatched.size}件`,
-    afterJson: { success, unmatched: Array.from(unmatched), yearMonth },
-  });
-
-  return { success, unmatched: Array.from(unmatched), errors };
-}
-
-async function importProDelight(
-  text: string,
-  yearMonth: string
-): Promise<ImportResult> {
-  const lines = text.split("\n").filter((l) => l.trim());
-  if (lines.length < 2) return { success: 0, unmatched: [], errors: [] };
-
-  const phoneRows = await db
-    .select({
-      number: phoneNumbers.number,
-      tenantId: sql<string>`ta.tenant_id`,
-    })
-    .from(phoneNumbers)
-    .innerJoin(
-      sql`tenant_assignments ta`,
-      sql`ta.phone_number_id = ${phoneNumbers.id} AND ta.end_month IS NULL`
-    );
-
-  const phoneToTenant = new Map<string, string>();
-  for (const row of phoneRows) {
-    if (row.tenantId) {
-      const normalized = row.number.replace(/-/g, "");
-      phoneToTenant.set(normalized, row.tenantId);
-    }
-  }
-
-  const now = new Date().toISOString();
-  let success = 0;
-  const unmatched = new Set<string>();
-  const errors: string[] = [];
-  const affectedTenants = new Set<string>();
-
-  const dataLines = lines.slice(1);
-  const batchSize = 100;
-
-  for (let i = 0; i < dataLines.length; i += batchSize) {
-    const batch = dataLines.slice(i, i + batchSize);
-    const inserts = [];
-
-    for (const line of batch) {
-      const cols = parseCsvLine(line);
-      if (cols.length < 9) continue;
-
-      const callType = cols[5]?.trim() ?? "";
-      const destinationType: "固定" | "携帯" = callType.includes("携帯") ? "携帯" : "固定";
-      const durationSeconds = parseInt(cols[7]?.trim() ?? "0", 10) || 0;
-      const cost = parseFloat(cols[8]?.trim() ?? "0") || 0;
-      const callDatetime = cols[6]?.trim() ?? "";
-      const callDate = callDatetime.split(" ")[0] ?? "";
-      const rawPhoneNumber = cols[3]?.trim() ?? "";
-      const destinationNumber = cols[4]?.trim() ?? "";
-
-      if (!rawPhoneNumber) continue;
-
-      let normalized = rawPhoneNumber.replace(/-/g, "");
-      if (normalized && !normalized.startsWith("0")) normalized = "0" + normalized;
-      const tenantId = phoneToTenant.get(normalized);
-
-      if (!tenantId) {
-        unmatched.add(rawPhoneNumber);
-        continue;
-      }
-
-      inserts.push({
-        id: randomUUID(),
-        tenantId,
-        yearMonth,
-        callDate,
-        phoneNumber: normalized,
-        destinationNumber,
-        destinationType,
-        durationSeconds,
-        cost,
-        source: "ProDelight" as const,
-        importedAt: now,
-      });
-      affectedTenants.add(tenantId);
-      success++;
-    }
-
-    if (inserts.length > 0) {
-      await db.insert(callLogs).values(inserts);
-    }
-  }
-
-  for (const tenantId of affectedTenants) {
-    await calculateMonthlyBilling(tenantId, yearMonth);
-  }
-
-  await logActivity({
-    actionType: "import",
-    message: `ProDelight CSVインポート完了: 成功${success}件、未照合${unmatched.size}件`,
-    afterJson: { success, unmatched: Array.from(unmatched), yearMonth },
-  });
-
-  return { success, unmatched: Array.from(unmatched), errors };
-}
 
 function parseCsvLine(line: string): string[] {
   const cols: string[] = [];
@@ -608,21 +425,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "年月の形式が不正です (YYYY-MM)" }, { status: 400 });
     }
 
-    const adjustOneFile = formData.get("adjustOne") as File | null;
-    const proDelightFile = formData.get("proDelight") as File | null;
     const softBankFile = formData.get("softBank") as File | null;
 
     const result: Record<string, ImportResult> = {};
-
-    if (adjustOneFile) {
-      const text = await adjustOneFile.text();
-      result.adjustOne = await importAdjustOne(text, yearMonth);
-    }
-
-    if (proDelightFile) {
-      const text = await proDelightFile.text();
-      result.proDelight = await importProDelight(text, yearMonth);
-    }
 
     if (softBankFile) {
       const buffer = await softBankFile.arrayBuffer();

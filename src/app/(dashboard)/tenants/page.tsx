@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { tenants, users, tenantAssignments, tenantPacks } from "@/lib/db/schema";
+import { tenants, users, ipNumbers, mobileLines } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,13 +22,13 @@ export default async function TenantsPage({
       companyName: tenants.companyName,
       status: tenants.status,
       assigneeName: users.name,
-      packCount: sql<number>`count(distinct ${tenantPacks.id})`,
-      allocatedCh: sql<number>`coalesce(sum(${tenantAssignments.allocatedCh}), 0)`,
+      ipNumberCount: sql<number>`count(distinct ${ipNumbers.id})`,
+      mobileLineCount: sql<number>`count(distinct ${mobileLines.id})`,
     })
     .from(tenants)
     .leftJoin(users, eq(tenants.assigneeId, users.id))
-    .leftJoin(tenantPacks, eq(tenantPacks.tenantId, tenants.id))
-    .leftJoin(tenantAssignments, eq(tenantAssignments.tenantId, tenants.id))
+    .leftJoin(ipNumbers, eq(ipNumbers.tenantId, tenants.id))
+    .leftJoin(mobileLines, eq(mobileLines.tenantId, tenants.id))
     .where(
       statusFilter
         ? eq(tenants.status, statusFilter as "active" | "churned")
@@ -40,8 +40,8 @@ export default async function TenantsPage({
   const tableRows = rows.map((r) => ({
     ...r,
     assigneeName: r.assigneeName ?? null,
-    packCount: Number(r.packCount),
-    allocatedCh: Number(r.allocatedCh),
+    ipNumberCount: Number(r.ipNumberCount),
+    mobileLineCount: Number(r.mobileLineCount),
   }));
 
   return (

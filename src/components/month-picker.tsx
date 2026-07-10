@@ -2,7 +2,7 @@
 import { useRouter } from "next/navigation";
 export function MonthPicker({
   yearMonth,
-  basePath = "/billing",
+  basePath = "/ip/billing",
 }: {
   yearMonth: string;
   basePath?: string;

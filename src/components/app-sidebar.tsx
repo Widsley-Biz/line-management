@@ -10,7 +10,6 @@ import {
   Network,
   Users,
   CreditCard,
-  GitBranch,
   Upload,
   Settings,
   LogOut,
@@ -19,6 +18,7 @@ import {
   Database,
   AlertCircle,
   FileWarning,
+  Calculator,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -32,9 +32,10 @@ const commonItems = [
 ];
 
 const ipItems = [
-  { href: "/billing-accounts", label: "請求アカウント", icon: Network },
-  { href: "/billing",          label: "請求管理",       icon: CreditCard },
-  { href: "/unit-ch",          label: "ユニットch",     icon: GitBranch },
+  { href: "/ip/master",  label: "回線マスタ",   icon: Database },
+  { href: "/ip/billing", label: "請求管理",     icon: CreditCard },
+  { href: "/ip/numbers", label: "契約番号一覧", icon: Network },
+  { href: "/ip/tariffs", label: "タリフ設定",   icon: Calculator },
 ];
 
 const mobileItems = [

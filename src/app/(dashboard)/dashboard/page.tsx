@@ -1,19 +1,17 @@
 import { db } from "@/lib/db";
 import {
   tenants,
-  monthlyUsages,
-  billingAccounts,
-  channelGroups,
+  ipUsages,
+  ipNumbers,
   auditLogs,
   users,
   mobileLines,
   mobileUsages,
 } from "@/lib/db/schema";
-import { eq, sum, count, desc, sql } from "drizzle-orm";
+import { eq, count, desc, sql } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { Users, Clock, History, ArrowRight } from "lucide-react";
-import { formatYen } from "@/lib/format";
 import { DashboardTabs } from "./dashboard-tabs";
 
 function currentYearMonth() {
@@ -38,15 +36,11 @@ function actionTypeLabel(type: string) {
     user_create: "ユーザー追加",
     user_update: "ユーザー更新",
     user_delete: "ユーザー削除",
-    pack_create: "パック追加",
-    pack_update: "パック更新",
-    pack_disable: "パック無効化",
+    tariff_update: "タリフ更新",
     sf_send: "SF送信",
     import: "インポート",
     action_create: "アクション登録",
     action_update: "アクション更新",
-    billing_account_create: "請求アカウント登録",
-    billing_account_update: "請求アカウント更新",
   };
   return map[type] ?? type;
 }
@@ -61,50 +55,25 @@ export default async function DashboardPage() {
     .where(eq(tenants.status, "active"));
 
   // ── IP回線データ ──
-  const usageStats = await db
-    .select({
-      sfStatus: monthlyUsages.sfStatus,
-      cnt: count(),
-      totalOverage: sum(monthlyUsages.overageCharge),
-      totalPackPrice: sum(monthlyUsages.totalPackPrice),
-      totalCost: sum(monthlyUsages.rawCost),
-    })
-    .from(monthlyUsages)
-    .where(eq(monthlyUsages.yearMonth, ym))
-    .groupBy(monthlyUsages.sfStatus);
+  const ipUsageStats = await db
+    .select({ sfStatus: ipUsages.sfStatus, cnt: count() })
+    .from(ipUsages)
+    .where(eq(ipUsages.yearMonth, ym))
+    .groupBy(ipUsages.sfStatus);
 
-  const inputDoneResult = await db
-    .selectDistinct({ tenantId: monthlyUsages.tenantId })
-    .from(monthlyUsages)
-    .where(eq(monthlyUsages.yearMonth, ym));
-  const inputDone = inputDoneResult.length;
-
-  const ipSfPending = usageStats
+  const ipSfPending = ipUsageStats
     .filter((r) => r.sfStatus === "未送信")
     .reduce((s, r) => s + Number(r.cnt), 0);
 
-  const totalRevenue = usageStats.reduce(
-    (s, r) => s + Number(r.totalPackPrice ?? 0) + Number(r.totalOverage ?? 0),
-    0
-  );
-  const totalCost = usageStats.reduce(
-    (s, r) => s + Number(r.totalCost ?? 0),
-    0
-  );
-  const grossProfit = totalRevenue - totalCost;
-
-  const accountList = await db
+  const ipNumbersRaw = await db
     .select({
-      id: billingAccounts.id,
-      billingCode: billingAccounts.billingCode,
-      name: billingAccounts.name,
-      totalCh: sql<number>`coalesce(sum(${channelGroups.contractCh}), 0)`,
+      tenantId: ipNumbers.tenantId,
+      totalNumbers: count(),
+      activeNumbers: sql<number>`sum(case when ${ipNumbers.status} = '契約中' then 1 else 0 end)`,
     })
-    .from(billingAccounts)
-    .leftJoin(channelGroups, eq(channelGroups.billingAccountId, billingAccounts.id))
-    .where(eq(billingAccounts.status, "active"))
-    .groupBy(billingAccounts.id)
-    .orderBy(billingAccounts.billingCode);
+    .from(ipNumbers)
+    .groupBy(ipNumbers.tenantId)
+    .orderBy(ipNumbers.tenantId);
 
   const recentLogs = await db
     .select({
@@ -149,6 +118,13 @@ export default async function DashboardPage() {
 
   const tenantNameMap = Object.fromEntries(tenantList.map((t) => [t.id, t.name]));
 
+  const ipNumbersPerTenant = ipNumbersRaw.map((n) => ({
+    tenantId: n.tenantId,
+    tenantName: tenantNameMap[n.tenantId] ?? n.tenantId,
+    totalNumbers: Number(n.totalNumbers),
+    activeNumbers: Number(n.activeNumbers),
+  }));
+
   const mobileLinesPerTenant = mobileLinesRaw.map((m) => ({
     tenantId: m.tenantId,
     tenantName: tenantNameMap[m.tenantId] ?? m.tenantId,
@@ -156,6 +132,7 @@ export default async function DashboardPage() {
     activeLines: Number(m.activeLines),
   }));
 
+  const totalIpNumbers = ipNumbersPerTenant.reduce((s, r) => s + r.totalNumbers, 0);
   const totalMobileLines = mobileLinesPerTenant.reduce((s, r) => s + r.totalLines, 0);
 
   return (
@@ -201,13 +178,8 @@ export default async function DashboardPage() {
       {/* IP回線 / 携帯回線タブ */}
       <DashboardTabs
         ym={ym}
-        accountList={accountList}
-        sfPending={ipSfPending}
-        inputDone={inputDone}
-        activeTenants={activeTenants}
-        grossProfit={grossProfit}
-        totalRevenue={totalRevenue}
-        totalCost={totalCost}
+        ipStat={{ totalNumbers: totalIpNumbers, sfPending: ipSfPending }}
+        ipNumbers={ipNumbersPerTenant}
         mobileStat={{ totalLines: totalMobileLines, sfPending: mobileSfPending }}
         mobileLines={mobileLinesPerTenant}
       />

@@ -197,6 +197,7 @@ CDR CSV（Shift-JIS / 月6ファイル程度）を /import からアップロー
 
 ## 6. ハマりどころ・設計メモ
 
+- **`npm run db:migrate` はdevサーバーを止めてから実行する**：migrateスクリプトはDBをWALモードで開くが、アプリはDELETEモードで開くため、同時に動かすと `SQLITE_BUSY: database is locked` が発生する。発生してしまったら、サーバーを止めて `node -e "require('better-sqlite3')('lime.db').pragma('journal_mode = DELETE')"` でWALを解除してから再起動する。
 - **CDRの文字コード**：Shift-JIS前提。ただしUTF-8として完全に妥当なファイルはUTF-8として読む（`decodeCdrBuffer`）。
 - **列マッピング**はA〜Oの15列固定（0始まりで A=0請求アカウント, C=2請求月, D=3利用月, F=5ご利用番号, H=7通話種別名称, N=13通話時間, O=14通話料金）。列構成が変わる場合は `src/lib/cdr-import.ts` の `COL` を修正。
 - **「差分投入」の意味**：キャリアから届くファイル自体が差分（追加分のみ）である前提。累積ファイル（前回分を含む全量）を再投入すると二重計上になるので運用注意。全量やり直したい場合は該当月の `ip_usage_details` / `ip_usages` / `ip_import_files` を削除してから取込し直す。

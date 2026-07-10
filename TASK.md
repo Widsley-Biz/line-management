@@ -45,8 +45,8 @@
 ### 手順
 
 ```bash
-git clone https://github.com/ryujikawakami-jpg/lime-management.git
-cd lime-management
+git clone https://github.com/Widsley-Biz/line-management.git
+cd line-management
 npm install
 
 # 環境変数（.env.local を作成。下表参照）

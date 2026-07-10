@@ -17,6 +17,10 @@ import { createHash } from "crypto";
 // journal未管理の既存DBに対して「適用済み」とみなす最後のマイグレーションtag
 const BASELINE_LAST_TAG = "0007_sf_no_action_reason";
 
+// スキーマドリフト（journal記録なしで手動適用済み等）への耐性:
+// 「既に存在する」系のエラーはスキップして続行する
+const TOLERABLE_ERROR = /duplicate column name|already exists/i;
+
 function main() {
   const dbPath = path.resolve(process.cwd(), process.env.DATABASE_URL ?? "lime.db");
   const migrationsDir = path.resolve(process.cwd(), "drizzle/migrations");
@@ -80,7 +84,17 @@ function main() {
         .filter(Boolean);
 
       const run = db.transaction(() => {
-        for (const stmt of statements) db.exec(stmt);
+        for (const stmt of statements) {
+          try {
+            db.exec(stmt);
+          } catch (e) {
+            if (TOLERABLE_ERROR.test(String(e && e.message))) {
+              console.log(`[migrate] skip (既に適用済み): ${entry.tag} :: ${String(e.message)}`);
+            } else {
+              throw e;
+            }
+          }
+        }
         insert.run(createHash("sha256").update(sql).digest("hex"), entry.when);
       });
       run();

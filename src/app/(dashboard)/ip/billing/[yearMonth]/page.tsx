@@ -45,6 +45,7 @@ export default async function IpBillingPage({
       sfStatus: ipUsages.sfStatus,
       sfSentAt: ipUsages.sfSentAt,
       sfErrorMessage: ipUsages.sfErrorMessage,
+      sfNoActionReason: ipUsages.sfNoActionReason,
       importedAt: ipUsages.importedAt,
     })
     .from(ipUsages)

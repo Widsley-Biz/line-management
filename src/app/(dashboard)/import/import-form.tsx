@@ -433,7 +433,7 @@ export function ImportForm() {
                     {(r.unmatchedNumbers?.length ?? 0) > 0 && (
                       <div className="mt-2">
                         <p className="text-xs font-medium text-amber-700 mb-1">
-                          未紐付け番号（{r.unmatchedNumbers!.length}件）— IP回線マスタで表番号または裏番号を登録して再取込してください
+                          未紐付け番号（{r.unmatchedNumbers!.length}件）— 未照合一覧（IP回線）から取引先を割り当ててください
                         </p>
                         <div className="max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
                           {r.unmatchedNumbers!.map((u, i) => (

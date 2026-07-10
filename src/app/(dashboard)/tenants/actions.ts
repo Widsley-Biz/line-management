@@ -9,6 +9,7 @@ import {
   ipUsages,
   ipUsageDetails,
   ipTariffs,
+  ipImportUnmatched,
   actions,
 } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
@@ -29,6 +30,7 @@ export async function deleteTenant(id: string) {
   await db.delete(ipUsages).where(eq(ipUsages.tenantId, id));
   await db.delete(ipNumbers).where(eq(ipNumbers.tenantId, id));
   await db.delete(ipTariffs).where(eq(ipTariffs.tenantId, id));
+  await db.delete(ipImportUnmatched).where(eq(ipImportUnmatched.resolvedTenantId, id));
   await db.delete(actions).where(eq(actions.tenantId, id));
 
   // 旧IP回線構造の残存データ（Phase Eのテーブル削除まではFK制約が残るため）

@@ -32,10 +32,12 @@ const commonItems = [
 ];
 
 const ipItems = [
-  { href: "/ip/master",  label: "回線マスタ",   icon: Database },
-  { href: "/ip/billing", label: "請求管理",     icon: CreditCard },
-  { href: "/ip/numbers", label: "契約番号一覧", icon: Network },
-  { href: "/ip/tariffs", label: "タリフ設定",   icon: Calculator },
+  { href: "/ip/master",     label: "回線マスタ",   icon: Database },
+  { href: "/ip/billing",    label: "請求管理",     icon: CreditCard },
+  { href: "/ip/sf-pending", label: "SF未送信一覧", icon: AlertCircle },
+  { href: "/ip/unmatched",  label: "未照合一覧",   icon: FileWarning },
+  { href: "/ip/numbers",    label: "契約番号一覧", icon: Network },
+  { href: "/ip/tariffs",    label: "タリフ設定",   icon: Calculator },
 ];
 
 const mobileItems = [

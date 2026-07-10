@@ -225,6 +225,7 @@ export const ipUsages = sqliteTable(
       .default("未送信"),
     sfSentAt: text("sf_sent_at"),
     sfErrorMessage: text("sf_error_message"),
+    sfNoActionReason: text("sf_no_action_reason"),
     importedAt: text("imported_at"),
     createdAt: text("created_at")
       .notNull()
@@ -267,6 +268,33 @@ export const ipUsageDetails = sqliteTable(
     index("idx_ip_usage_details_tenant").on(t.tenantId),
     index("idx_ip_usage_details_month").on(t.yearMonth),
   ]
+);
+
+// ============================================================
+// IP Import Unmatched（CDR取込 未紐付け番号）
+// ============================================================
+export const ipImportUnmatched = sqliteTable(
+  "ip_import_unmatched",
+  {
+    id: text("id").primaryKey(),
+    yearMonth: text("year_month").notNull(),
+    phoneNumber: text("phone_number").notNull(), // 正規化済みのご利用番号
+    // { [通話種別名称]: { category, seconds, amount } }
+    itemsJson: text("items_json").notNull().default("{}"),
+    totalSeconds: integer("total_seconds").notNull().default(0),
+    status: text("status", { enum: ["pending", "resolved", "ignored"] })
+      .notNull()
+      .default("pending"),
+    resolvedTenantId: text("resolved_tenant_id").references(() => tenants.id),
+    importedAt: text("imported_at").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [index("idx_ip_import_unmatched_month").on(t.yearMonth)]
 );
 
 // ============================================================

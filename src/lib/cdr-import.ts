@@ -1,7 +1,12 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { ipNumbers, ipImportFiles, ipUsageDetails } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import {
+  ipNumbers,
+  ipImportFiles,
+  ipImportUnmatched,
+  ipUsageDetails,
+} from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
 import { createHash, randomUUID } from "crypto";
 import {
   classifyCallType,
@@ -62,6 +67,12 @@ export type UnmatchedNumber = {
   totalSeconds: number;
 };
 
+/** 未紐付け番号の通話種別内訳（ip_import_unmatched.items_json の形） */
+export type UnmatchedItems = Record<
+  string, // 通話種別名称
+  { category: CallCategory; seconds: number; amount: number }
+>;
+
 export type CdrFileResult = {
   fileName: string;
   status: "imported" | "skipped" | "error";
@@ -74,6 +85,75 @@ export type CdrFileResult = {
   unmatchedNumbers?: UnmatchedNumber[];
   unknownCallTypes?: string[];
 };
+
+/**
+ * 未照合番号を取引先に割り当てる。
+ * - 番号マスタ未登録なら表番号として登録（次回以降の取込で自動名寄せされる）
+ * - 保存済みの内訳をタリフ計算して明細に反映し、再集計する
+ */
+export async function assignUnmatchedToTenant(
+  id: string,
+  tenantId: string
+): Promise<{ ok: boolean; error?: string; usageId?: string }> {
+  const [row] = await db
+    .select()
+    .from(ipImportUnmatched)
+    .where(eq(ipImportUnmatched.id, id));
+  if (!row) return { ok: false, error: "対象の未照合レコードが見つかりません" };
+
+  let items: UnmatchedItems;
+  try {
+    items = JSON.parse(row.itemsJson) as UnmatchedItems;
+  } catch {
+    items = {};
+  }
+
+  const now = new Date().toISOString();
+
+  const [existingNumber] = await db
+    .select({ id: ipNumbers.id })
+    .from(ipNumbers)
+    .where(eq(ipNumbers.phoneNumber, row.phoneNumber))
+    .limit(1);
+  if (!existingNumber) {
+    await db.insert(ipNumbers).values({
+      id: randomUUID(),
+      tenantId,
+      phoneNumber: row.phoneNumber,
+      status: "契約中",
+      notes: "未照合一覧から割当",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const tariff = await getTariffForTenant(tenantId);
+  const usageId = await ensureIpUsage(tenantId, row.yearMonth);
+
+  for (const [callTypeName, item] of Object.entries(items)) {
+    await db.insert(ipUsageDetails).values({
+      id: randomUUID(),
+      ipUsageId: usageId,
+      tenantId,
+      phoneNumber: row.phoneNumber,
+      callCategory: item.category,
+      callTypeName,
+      totalSeconds: item.seconds,
+      sourceAmount: item.amount,
+      computedAmount: computeAmount(item.category, item.seconds, item.amount, tariff),
+      yearMonth: row.yearMonth,
+      createdAt: now,
+    });
+  }
+  await recalcIpUsage(tenantId, row.yearMonth);
+
+  await db
+    .update(ipImportUnmatched)
+    .set({ status: "resolved", resolvedTenantId: tenantId, updatedAt: now })
+    .where(eq(ipImportUnmatched.id, id));
+
+  return { ok: true, usageId };
+}
 
 /**
  * CDRファイル1件を取り込む。
@@ -148,6 +228,9 @@ export async function importCdrFile(
   };
   const agg = new Map<string, AggValue>();
   const unmatchedMap = new Map<string, UnmatchedNumber>();
+  // 未紐付け番号の内訳（number×yearMonth → 通話種別ごとの秒数・金額）
+  type UnmatchedAgg = { phoneNumber: string; yearMonth: string; items: UnmatchedItems; totalSeconds: number };
+  const unmatchedAggMap = new Map<string, UnmatchedAgg>();
   const unknownCallTypes = new Set<string>();
   let billingAccount = "";
   let fileYearMonth = "";
@@ -188,6 +271,20 @@ export async function importCdrFile(
       entry.rowCount++;
       entry.totalSeconds += seconds;
       unmatchedMap.set(normalized, entry);
+
+      const aggKey = `${normalized} ${yearMonth}`;
+      const uAgg = unmatchedAggMap.get(aggKey) ?? {
+        phoneNumber: normalized,
+        yearMonth,
+        items: {} as UnmatchedItems,
+        totalSeconds: 0,
+      };
+      const item = uAgg.items[callTypeName] ?? { category, seconds: 0, amount: 0 };
+      item.seconds += seconds;
+      item.amount += amount;
+      uAgg.items[callTypeName] = item;
+      uAgg.totalSeconds += seconds;
+      unmatchedAggMap.set(aggKey, uAgg);
       continue;
     }
 
@@ -245,6 +342,57 @@ export async function importCdrFile(
   for (const key of affected) {
     const [tenantId, yearMonth] = key.split(" ");
     await recalcIpUsage(tenantId, yearMonth);
+  }
+
+  // 未紐付け番号を保存（同一番号×利用月のpending行があれば内訳を加算マージ）
+  for (const uAgg of unmatchedAggMap.values()) {
+    const [existing] = await db
+      .select()
+      .from(ipImportUnmatched)
+      .where(
+        and(
+          eq(ipImportUnmatched.phoneNumber, uAgg.phoneNumber),
+          eq(ipImportUnmatched.yearMonth, uAgg.yearMonth),
+          eq(ipImportUnmatched.status, "pending")
+        )
+      )
+      .limit(1);
+
+    if (existing) {
+      let merged: UnmatchedItems;
+      try {
+        merged = JSON.parse(existing.itemsJson) as UnmatchedItems;
+      } catch {
+        merged = {};
+      }
+      for (const [name, item] of Object.entries(uAgg.items)) {
+        const prev = merged[name] ?? { category: item.category, seconds: 0, amount: 0 };
+        prev.seconds += item.seconds;
+        prev.amount += item.amount;
+        merged[name] = prev;
+      }
+      await db
+        .update(ipImportUnmatched)
+        .set({
+          itemsJson: JSON.stringify(merged),
+          totalSeconds: existing.totalSeconds + uAgg.totalSeconds,
+          importedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(ipImportUnmatched.id, existing.id));
+    } else {
+      await db.insert(ipImportUnmatched).values({
+        id: randomUUID(),
+        yearMonth: uAgg.yearMonth,
+        phoneNumber: uAgg.phoneNumber,
+        itemsJson: JSON.stringify(uAgg.items),
+        totalSeconds: uAgg.totalSeconds,
+        status: "pending",
+        importedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
   }
 
   // 取込履歴（重複判定用ハッシュ）を保存

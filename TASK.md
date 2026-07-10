@@ -121,9 +121,9 @@ CDR CSV（Shift-JIS / 月6ファイル程度）を /import からアップロー
 - 取込は**差分投入**：同一内容ファイルはハッシュでスキップ、内容が異なれば追記して自動再集計（再集計時にSFステータスは「未送信」に戻る）
 - タリフ変更は**変更後に取り込んだCDRから適用**（遡及再計算はしない。必要なら該当月の明細を消して再取込）
 
-### 新規テーブル（`drizzle/migrations/0008_ip_line_revamp.sql`）
+### 新規テーブル（`drizzle/migrations/0008_ip_line_revamp.sql`・`0009_ip_unmatched.sql`）
 
-`ip_numbers`（番号マスタ・裏番号付き） / `ip_tariffs`（tenant_id NULL=デフォルト） / `ip_usages`（月次・切り上げ後金額） / `ip_usage_details`（番号×通話種別内訳） / `ip_import_files`（取込履歴・ハッシュ）
+`ip_numbers`（番号マスタ・裏番号付き） / `ip_tariffs`（tenant_id NULL=デフォルト） / `ip_usages`（月次・切り上げ後金額） / `ip_usage_details`（番号×通話種別内訳） / `ip_import_files`（取込履歴・ハッシュ） / `ip_import_unmatched`（未紐付け番号・0009）
 
 ### 新規・変更ファイルの要点
 
@@ -136,7 +136,8 @@ CDR CSV（Shift-JIS / 月6ファイル程度）を /import からアップロー
 | API | `src/app/api/ip/tariffs` | デフォルト更新・取引先別上書き・解除 |
 | API | `src/app/api/ip/send-sf` | CC_01/CC_02の2商品でOpportunityLineItem登録 |
 | API | `src/app/api/ip/export` | 全社CSV（summary）・番号別CSV（numbers） |
-| 画面 | `/ip/master` `/ip/tariffs` `/ip/billing/[yearMonth]` `/ip/numbers` | 携帯回線と同構成の新画面 |
+| API | `src/app/api/ip/unmatched`・`billing-status` | 未照合番号の割当/無視・対応不要ステータス変更 |
+| 画面 | `/ip/master` `/ip/tariffs` `/ip/billing/[yearMonth]` `/ip/numbers` `/ip/sf-pending` `/ip/unmatched` | 携帯回線と同構成の新画面 |
 | 画面 | `/import`・ダッシュボード・サイドメニュー・取引先一覧/詳細 | 新構成へ刷新 |
 
 ### 廃止したもの
@@ -163,6 +164,7 @@ CDR CSV（Shift-JIS / 月6ファイル程度）を /import からアップロー
 
 3. **実CDRファイルでの検証**
    - [ ] 実ファイルを `/import` から取込し、金額・分類・名寄せを目視検証
+   - [ ] 未紐付け番号は「未照合一覧」（`/ip/unmatched`）に保存される。取引先を割り当てると番号マスタへの自動登録＋該当月への金額反映まで行われる
    - [ ] H列に想定外の通話種別名称があれば取込結果に「未対応の通話種別」として警告表示される → 必要なら `src/lib/ip-billing.ts` の `classifyCallType` に追加
 
 4. **旧テーブル削除（移行完了後）**

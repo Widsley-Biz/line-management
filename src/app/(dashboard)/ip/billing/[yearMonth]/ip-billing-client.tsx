@@ -18,6 +18,7 @@ type Row = {
   sfStatus: string;
   sfSentAt: string | null;
   sfErrorMessage: string | null;
+  sfNoActionReason: string | null;
   importedAt: string | null;
 };
 
@@ -222,6 +223,11 @@ export function IpBillingClient({
                             {sfStatusBadge(r.sfStatus)}
                             {r.sfErrorMessage && (
                               <p className="text-xs text-red-600">{r.sfErrorMessage}</p>
+                            )}
+                            {r.sfStatus === "対応不要" && r.sfNoActionReason && (
+                              <p className="text-xs text-gray-400 max-w-48 truncate" title={r.sfNoActionReason}>
+                                {r.sfNoActionReason}
+                              </p>
                             )}
                           </div>
                         </td>

@@ -28,6 +28,10 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Migrations (applied at container startup)
+COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate-on-start.mjs ./scripts/migrate-on-start.mjs
+
 # Data directory for SQLite (mount as volume in production)
 RUN mkdir -p /data && chown nextjs:nodejs /data
 
@@ -39,4 +43,4 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 ENV DATABASE_URL=/data/lime.db
 
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "node scripts/migrate-on-start.mjs && exec node server.js"]

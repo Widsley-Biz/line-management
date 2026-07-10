@@ -42,19 +42,30 @@
   xcode-select --install
   ```
 
-### 手順
+### 手順（既存のローカル環境を更新する場合）
+
+リポジトリが手元にある前提。**既存の `lime.db` はそのまま使えます**（今回の改修は旧テーブルを削除していないため、マイグレーションで新テーブルが追加されるだけです）。
+
+```bash
+git pull origin main
+npm install          # 依存関係の更新（package.jsonのスクリプト整理を含む）
+npm run db:migrate   # マイグレーション0008を適用（IP新テーブル作成＋デフォルトタリフ投入）
+npm run dev          # http://localhost:3000
+```
+
+- `.env.local` は既存のものを継続利用可。ただし**IP回線のSF送信には新しい環境変数が必要**（下表の `SF_PRICEBOOK_ENTRY_ID_CC01` / `CC02`）
+- `npm run db:seed` は不要（既存DBの場合。デフォルトタリフはマイグレーションで投入済み）
+
+### 手順（ゼロから構築する場合）
 
 ```bash
 git clone https://github.com/Widsley-Biz/line-management.git
 cd line-management
 npm install
-
-# 環境変数（.env.local を作成。下表参照）
-touch .env.local
-
-npm run db:migrate   # マイグレーション適用（0008でIP新テーブル作成＋デフォルトタリフ投入）
+touch .env.local     # 環境変数を設定（下表参照）
+npm run db:migrate
 npm run db:seed      # 初期ユーザー・デフォルトタリフ投入
-npm run dev          # http://localhost:3000
+npm run dev
 ```
 
 初期ログイン: `ryuji.kawakami@widsley.com` / `Widsley2024!`

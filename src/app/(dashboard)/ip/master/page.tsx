@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { ipNumbers, tenants } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { ipNumbers, ipMasterUnmatched, tenants } from "@/lib/db/schema";
+import { eq, ne } from "drizzle-orm";
 import { IpMasterClient } from "./ip-master-client";
 
 export default async function IpMasterPage() {
@@ -24,5 +24,16 @@ export default async function IpMasterPage() {
     .where(eq(tenants.status, "active"))
     .orderBy(tenants.companyName);
 
-  return <IpMasterClient numbers={numbers} tenants={allTenants} />;
+  const unmatchedPending = await db
+    .select({ id: ipMasterUnmatched.id })
+    .from(ipMasterUnmatched)
+    .where(ne(ipMasterUnmatched.status, "resolved"));
+
+  return (
+    <IpMasterClient
+      numbers={numbers}
+      tenants={allTenants}
+      unmatchedCount={unmatchedPending.length}
+    />
+  );
 }

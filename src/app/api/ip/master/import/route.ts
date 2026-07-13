@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { ipNumbers, tenants } from "@/lib/db/schema";
+import { ipNumbers, ipMasterUnmatched, tenants } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { normalizePhoneNumber } from "@/lib/ip-billing";
@@ -24,7 +25,7 @@ function parseCsvLine(line: string): string[] {
   return cols;
 }
 
-// CSVフォーマット: 電話番号,裏番号,会社名,ステータス,備考
+// CSVフォーマット: 電話番号,裏番号,取引先(会社名 or tenantスラッグ),ステータス,備考
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -40,9 +41,10 @@ export async function POST(req: NextRequest) {
     }
 
     const allTenants = await db
-      .select({ id: tenants.id, companyName: tenants.companyName })
+      .select({ id: tenants.id, companyName: tenants.companyName, slug: tenants.slug })
       .from(tenants);
-    const tenantMap = new Map(allTenants.map((t) => [t.companyName.trim(), t.id]));
+    const tenantByCompanyName = new Map(allTenants.map((t) => [t.companyName.trim(), t.id]));
+    const tenantBySlug = new Map(allTenants.map((t) => [t.slug.trim(), t.id]));
 
     const existingRows = await db
       .select({ phoneNumber: ipNumbers.phoneNumber })
@@ -51,9 +53,16 @@ export async function POST(req: NextRequest) {
       existingRows.map((l) => normalizePhoneNumber(l.phoneNumber))
     );
 
+    const existingUnmatched = await db
+      .select({ id: ipMasterUnmatched.id, phoneNumber: ipMasterUnmatched.phoneNumber })
+      .from(ipMasterUnmatched);
+    const unmatchedByPhone = new Map(existingUnmatched.map((u) => [u.phoneNumber, u.id]));
+
     const now = new Date().toISOString();
+    const sourceName = file.name.slice(0, 200);
     let inserted = 0;
     let skipped = 0;
+    let unmatchedSaved = 0;
     const unmatchedTenants: string[] = [];
     const duplicatePhones: string[] = [];
     const errors: string[] = [];
@@ -64,26 +73,49 @@ export async function POST(req: NextRequest) {
 
       const phoneNumber = normalizePhoneNumber(cols[0] ?? "");
       const subNumber = normalizePhoneNumber(cols[1] ?? "") || null;
-      const companyName = cols[2]?.trim() ?? "";
+      const tenantKey = cols[2]?.trim() ?? "";
       const status = (cols[3]?.trim() || "契約中") as "契約中" | "解約済";
       const notes = cols[4]?.trim() || null;
 
-      if (!phoneNumber || !companyName) {
-        errors.push(`行${i + 1}: 電話番号または会社名が空です`);
+      if (!phoneNumber || !tenantKey) {
+        errors.push(`行${i + 1}: 電話番号または取引先が空です`);
         skipped++;
         continue;
       }
 
-      const tenantId = tenantMap.get(companyName);
-      if (!tenantId) {
-        unmatchedTenants.push(companyName);
-        skipped++;
-        continue;
-      }
+      const tenantId = tenantByCompanyName.get(tenantKey) ?? tenantBySlug.get(tenantKey);
 
       if (existingPhones.has(phoneNumber)) {
         duplicatePhones.push(phoneNumber);
         skipped++;
+        continue;
+      }
+
+      if (!tenantId) {
+        unmatchedTenants.push(tenantKey);
+        skipped++;
+
+        const existingId = unmatchedByPhone.get(phoneNumber);
+        if (existingId) {
+          await db
+            .update(ipMasterUnmatched)
+            .set({ subNumber, attemptedTenantKey: tenantKey, sourceName, notes, updatedAt: now })
+            .where(eq(ipMasterUnmatched.id, existingId));
+        } else {
+          const id = randomUUID();
+          await db.insert(ipMasterUnmatched).values({
+            id,
+            phoneNumber,
+            subNumber,
+            attemptedTenantKey: tenantKey,
+            sourceName,
+            notes,
+            createdAt: now,
+            updatedAt: now,
+          });
+          unmatchedByPhone.set(phoneNumber, id);
+        }
+        unmatchedSaved++;
         continue;
       }
 
@@ -104,13 +136,14 @@ export async function POST(req: NextRequest) {
 
     await logActivity({
       actionType: "import",
-      message: `IP番号マスタ一括インポート: 登録${inserted}件、スキップ${skipped}件`,
-      afterJson: { inserted, skipped, unmatchedTenants, duplicatePhones },
+      message: `IP番号マスタ一括インポート: 登録${inserted}件、スキップ${skipped}件(未照合${unmatchedSaved}件)`,
+      afterJson: { inserted, skipped, unmatchedSaved, unmatchedTenants, duplicatePhones },
     });
 
     return NextResponse.json({
       inserted,
       skipped,
+      unmatchedSaved,
       unmatchedTenants: [...new Set(unmatchedTenants)],
       duplicatePhones,
       errors,

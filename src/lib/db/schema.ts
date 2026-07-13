@@ -298,6 +298,32 @@ export const ipImportUnmatched = sqliteTable(
 );
 
 // ============================================================
+// IP Master Import Unmatched（番号マスタCSV一括登録 未照合tenant）
+// ============================================================
+export const ipMasterUnmatched = sqliteTable(
+  "ip_master_unmatched",
+  {
+    id: text("id").primaryKey(),
+    phoneNumber: text("phone_number").notNull().unique(), // 正規化済み表番号
+    subNumber: text("sub_number"),
+    attemptedTenantKey: text("attempted_tenant_key").notNull(), // CSV上のtenant/会社名(未マッチ)
+    sourceName: text("source_name"), // インポート元CSVのファイル名等
+    notes: text("notes"),
+    status: text("status", { enum: ["pending", "resolved", "ignored"] })
+      .notNull()
+      .default("pending"),
+    resolvedTenantId: text("resolved_tenant_id").references(() => tenants.id),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [index("idx_ip_master_unmatched_status").on(t.status)]
+);
+
+// ============================================================
 // IP Import Files（CDR取込履歴・重複判定）
 // ============================================================
 export const ipImportFiles = sqliteTable("ip_import_files", {

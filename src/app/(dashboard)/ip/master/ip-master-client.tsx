@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Pencil, Trash2, Network, Upload, FileText } from "lucide-react";
+import { Plus, Pencil, Trash2, Network, Upload, FileText, FileWarning } from "lucide-react";
 
 type IpNumber = {
   id: string;
@@ -25,17 +26,19 @@ type Tenant = {
 type Props = {
   numbers: IpNumber[];
   tenants: Tenant[];
+  unmatchedCount: number;
 };
 
 type ImportResult = {
   inserted: number;
   skipped: number;
+  unmatchedSaved: number;
   unmatchedTenants: string[];
   duplicatePhones: string[];
   errors: string[];
 };
 
-export function IpMasterClient({ numbers, tenants }: Props) {
+export function IpMasterClient({ numbers, tenants, unmatchedCount }: Props) {
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -115,7 +118,7 @@ export function IpMasterClient({ numbers, tenants }: Props) {
 
   function downloadTemplate() {
     const bom = "﻿";
-    const header = "電話番号,裏番号,会社名,ステータス,備考";
+    const header = "電話番号,裏番号,取引先,ステータス,備考";
     const example = "0312345678,0120123456,株式会社サンプル,契約中,";
     const blob = new Blob([bom + header + "\n" + example], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -135,6 +138,13 @@ export function IpMasterClient({ numbers, tenants }: Props) {
           <p className="text-sm text-gray-500 mt-1">電話番号（表番号・裏番号）と取引先の紐付けを管理します</p>
         </div>
         <div className="flex gap-2">
+          {unmatchedCount > 0 && (
+            <Link href="/ip/master/unmatched">
+              <Button variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50">
+                <FileWarning className="h-4 w-4 mr-2" />未照合 {unmatchedCount}件
+              </Button>
+            </Link>
+          )}
           <Button variant="outline" onClick={() => { setShowImport(!showImport); setShowForm(false); }}>
             <Upload className="h-4 w-4 mr-2" />CSV一括登録
           </Button>
@@ -155,10 +165,12 @@ export function IpMasterClient({ numbers, tenants }: Props) {
           <CardContent className="space-y-4">
             <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-xs text-blue-800 space-y-1">
               <p className="font-medium">CSVフォーマット（1行目はヘッダー）</p>
-              <p className="font-mono">電話番号,裏番号,会社名,ステータス,備考</p>
+              <p className="font-mono">電話番号,裏番号,取引先,ステータス,備考</p>
+              <p className="text-gray-500">※取引先は会社名またはtenantスラッグのどちらでも一致します</p>
               <p className="text-gray-500">※裏番号（フリーダイヤル）は省略可</p>
               <p className="text-gray-500">※ステータスは「契約中」または「解約済」（省略時は「契約中」）</p>
               <p className="text-gray-500">※電話番号はハイフンあり・なし両対応</p>
+              <p className="text-gray-500">※取引先が一致しない行は未登録のまま「未照合一覧」に保存され、後から割当できます</p>
             </div>
             <Button variant="outline" size="sm" onClick={downloadTemplate}>
               <FileText className="h-4 w-4 mr-2" />テンプレートをダウンロード
@@ -183,11 +195,13 @@ export function IpMasterClient({ numbers, tenants }: Props) {
                 <p className="font-medium text-green-800">
                   インポート完了：{importResult.inserted}件登録、{importResult.skipped}件スキップ
                 </p>
-                {importResult.unmatchedTenants.length > 0 && (
+                {importResult.unmatchedSaved > 0 && (
                   <div>
-                    <p className="text-xs font-medium text-amber-700">未照合の会社名（{importResult.unmatchedTenants.length}件）</p>
+                    <p className="text-xs font-medium text-amber-700">
+                      取引先未照合（{importResult.unmatchedSaved}件）→ 「未照合一覧」から後で割当できます
+                    </p>
                     <div className="max-h-24 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2 mt-1">
-                      {importResult.unmatchedTenants.map((t, i) => <p key={i} className="text-xs text-amber-800 font-mono">{t}</p>)}
+                      {[...new Set(importResult.unmatchedTenants)].map((t, i) => <p key={i} className="text-xs text-amber-800 font-mono">{t}</p>)}
                     </div>
                   </div>
                 )}

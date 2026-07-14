@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ipMasterUnmatched, ipNumbers } from "@/lib/db/schema";
-import { eq, ne } from "drizzle-orm";
+import { eq, ne, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 
@@ -96,9 +96,25 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-// DELETE: 未照合レコードを削除
+// DELETE: 未照合レコードを削除（単一idのid、または複数選択のids配列）
 export async function DELETE(req: NextRequest) {
-  const { id } = await req.json();
+  const body = await req.json();
+
+  if (Array.isArray(body?.ids)) {
+    const ids: string[] = body.ids.filter((v: unknown) => typeof v === "string");
+    if (ids.length === 0) {
+      return NextResponse.json({ error: "ids is empty" }, { status: 400 });
+    }
+    await db.delete(ipMasterUnmatched).where(inArray(ipMasterUnmatched.id, ids));
+    await logActivity({
+      actionType: "delete",
+      message: `IP番号マスタ未照合を選択削除: ${ids.length}件`,
+      targetTable: "ip_master_unmatched",
+    });
+    return NextResponse.json({ ok: true, deleted: ids.length });
+  }
+
+  const { id } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   await db.delete(ipMasterUnmatched).where(eq(ipMasterUnmatched.id, id));
   return NextResponse.json({ ok: true });

@@ -22,7 +22,9 @@ export function MasterUnmatchedClient({ rows: initial, tenants }: { rows: Row[];
   const [rows, setRows] = useState<Row[]>(initial);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Record<string, string>>({});
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const filtered = rows.filter((r) => {
@@ -36,6 +38,40 @@ export function MasterUnmatchedClient({ rows: initial, tenants }: { rows: Row[];
 
   const pendingCount = rows.filter((r) => r.status === "pending").length;
   const ignoredCount = rows.filter((r) => r.status === "ignored").length;
+  const checkedIds = Object.keys(checked).filter((id) => checked[id]);
+  const allFilteredChecked = filtered.length > 0 && filtered.every((r) => checked[r.id]);
+
+  function toggleAllFiltered() {
+    const next = !allFilteredChecked;
+    setChecked((prev) => {
+      const copy = { ...prev };
+      for (const r of filtered) copy[r.id] = next;
+      return copy;
+    });
+  }
+
+  async function handleBulkDelete() {
+    if (checkedIds.length === 0) return;
+    if (!confirm(`選択した${checkedIds.length}件を削除しますか？（取消できません）`)) return;
+    setBulkDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/ip/master/unmatched", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: checkedIds }),
+      });
+      if (res.ok) {
+        setRows((prev) => prev.filter((r) => !checked[r.id]));
+        setChecked({});
+      } else {
+        const data = await res.json();
+        setError(data.error ?? "一括削除に失敗しました");
+      }
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
 
   async function handleAssign(id: string) {
     const tenantId = selected[id];
@@ -104,13 +140,27 @@ export function MasterUnmatchedClient({ rows: initial, tenants }: { rows: Row[];
         </Card>
       </div>
 
-      <input
-        type="text"
-        placeholder="電話番号・裏番号・取引先キーで検索..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="h-9 rounded-lg border border-input bg-background px-3 text-sm w-72 focus:outline-none focus:ring-2 focus:ring-primary/30"
-      />
+      <div className="flex items-center gap-3 flex-wrap">
+        <input
+          type="text"
+          placeholder="電話番号・裏番号・取引先キーで検索..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-9 rounded-lg border border-input bg-background px-3 text-sm w-72 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+        {checkedIds.length > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-red-300 text-red-600 hover:bg-red-50"
+            onClick={handleBulkDelete}
+            disabled={bulkDeleting}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            選択した{checkedIds.length}件を削除
+          </Button>
+        )}
+      </div>
 
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
@@ -128,6 +178,14 @@ export function MasterUnmatchedClient({ rows: initial, tenants }: { rows: Row[];
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-gray-50">
+                  <th className="px-4 py-3 w-8">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredChecked}
+                      onChange={toggleAllFiltered}
+                      aria-label="全て選択"
+                    />
+                  </th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">電話番号（表番号）</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">裏番号</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">CSV上の取引先</th>
@@ -142,6 +200,14 @@ export function MasterUnmatchedClient({ rows: initial, tenants }: { rows: Row[];
                   const isPending = r.status === "pending";
                   return (
                     <tr key={r.id} className={`border-b hover:bg-gray-50 ${r.status === "ignored" ? "opacity-50" : ""}`}>
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={!!checked[r.id]}
+                          onChange={(e) => setChecked((p) => ({ ...p, [r.id]: e.target.checked }))}
+                          aria-label={`${r.phoneNumber}を選択`}
+                        />
+                      </td>
                       <td className="px-4 py-3 font-mono font-medium text-gray-800">{r.phoneNumber}</td>
                       <td className="px-4 py-3 font-mono text-gray-500">{r.subNumber ?? "-"}</td>
                       <td className="px-4 py-3 text-gray-700">{r.attemptedTenantKey}</td>

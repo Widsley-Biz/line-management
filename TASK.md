@@ -83,8 +83,8 @@ npm run dev
 | `SF_PRICEBOOK_ENTRY_ID_CC01` | **CC_01（IP回線通話料_国内固定番号宛）のPricebookEntry ID** | ◯（IP SF送信時）✅本番設定済み（2026-07-15確認） |
 | `SF_PRICEBOOK_ENTRY_ID_CC02` | **CC_02（IP回線通話料_国内携帯番号宛）のPricebookEntry ID** | ◯（IP SF送信時）✅本番設定済み（2026-07-15確認） |
 | `SF_PRICEBOOK_ENTRY_ID_MOBILE` | 携帯回線超過分のPricebookEntry ID（既存） | ◯（携帯SF送信時） |
-| `NEXT_PUBLIC_SF_ORG_URL` | 商談リンク表示用のSF組織URL | 任意 |
-| `DATABASE_URL` | SQLiteファイルパス（既定 `lime.db`） | 任意 |
+| `NEXT_PUBLIC_SF_ORG_URL` | 商談リンク表示用のSF組織URL | 任意・✅本番は`Dockerfile`にビルド時ENVとして設定済み（`https://widsley.my.salesforce.com`、2026-07-15確認） |
+| `DATABASE_URL` | SQLiteファイルパス（既定 `lime.db`） | 任意・✅本番は`Dockerfile`にビルド時ENVとして`/data/lime.db`（永続ボリューム想定パス）を設定済み |
 
 > 実運用中の値は現行運用者（Windows機の `.env` / 本番サーバー）から引き継いでください。**CC_01 / CC_02 のPricebookEntry IDは新規に必要**です（SFの価格表で該当2商品のエントリIDを確認）。
 

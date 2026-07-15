@@ -55,10 +55,22 @@ export function normalizePhoneNumber(raw: string): string {
   return raw.replace(/[-‐−ー\s　]/g, "").trim();
 }
 
-/** 利用月（YYYYMM / YYYY/MM / YYYY-MM）→ YYYY-MM に正規化。不正は null */
+/** 利用月（YYYYMM / YYYY/MM / YYYY-MM / YYYY/MM/DD / YYYYMMDD）→ YYYY-MM に正規化。不正は null */
 export function normalizeYearMonth(raw: string): string | null {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length !== 6) return null;
+  const trimmed = raw.trim();
+
+  // 区切りあり: YYYY-MM / YYYY/MM / YYYY-MM-DD / YYYY/MM/DD（月日は1〜2桁いずれも可）
+  const withSeparator = trimmed.match(/^(\d{4})[-\/](\d{1,2})(?:[-\/]\d{1,2})?$/);
+  if (withSeparator) {
+    const y = withSeparator[1];
+    const m = withSeparator[2].padStart(2, "0");
+    if (Number(m) < 1 || Number(m) > 12) return null;
+    return `${y}-${m}`;
+  }
+
+  // 区切りなし: YYYYMM / YYYYMMDD
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length !== 6 && digits.length !== 8) return null;
   const y = digits.slice(0, 4);
   const m = digits.slice(4, 6);
   if (Number(m) < 1 || Number(m) > 12) return null;

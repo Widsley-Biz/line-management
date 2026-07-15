@@ -80,8 +80,8 @@ npm run dev
 | `SF_LOGIN_URL` | SFログインURL（既定 `https://login.salesforce.com`） | 任意 |
 | `SF_INSTANCE_URL` | client_credentials用インスタンスURL | 任意 |
 | `SF_PRICEBOOK2_ID` | 商談にセットする価格表ID | ◯（SF送信時） |
-| `SF_PRICEBOOK_ENTRY_ID_CC01` | **CC_01（IP回線通話料_国内固定番号宛）のPricebookEntry ID** | ◯（IP SF送信時）**※未設定・要確認** |
-| `SF_PRICEBOOK_ENTRY_ID_CC02` | **CC_02（IP回線通話料_国内携帯番号宛）のPricebookEntry ID** | ◯（IP SF送信時）**※未設定・要確認** |
+| `SF_PRICEBOOK_ENTRY_ID_CC01` | **CC_01（IP回線通話料_国内固定番号宛）のPricebookEntry ID** | ◯（IP SF送信時）✅本番設定済み（2026-07-15確認） |
+| `SF_PRICEBOOK_ENTRY_ID_CC02` | **CC_02（IP回線通話料_国内携帯番号宛）のPricebookEntry ID** | ◯（IP SF送信時）✅本番設定済み（2026-07-15確認） |
 | `SF_PRICEBOOK_ENTRY_ID_MOBILE` | 携帯回線超過分のPricebookEntry ID（既存） | ◯（携帯SF送信時） |
 | `NEXT_PUBLIC_SF_ORG_URL` | 商談リンク表示用のSF組織URL | 任意 |
 | `DATABASE_URL` | SQLiteファイルパス（既定 `lime.db`） | 任意 |
@@ -153,9 +153,9 @@ CDR CSV（Shift-JIS / 月6ファイル程度）を /import からアップロー
 
 **着手条件：新構造の動作確認が済んでから**（要件定義書 §15。実装と並行しない）。
 
-1. **SF商品設定**
-   - [ ] SFでCC_01 / CC_02のPricebookEntry IDを確認し、`SF_PRICEBOOK_ENTRY_ID_CC01` / `CC02` を本番`.env`に設定
-   - [ ] 設定画面（`/settings`）下部で設定状況を確認できる
+1. **SF商品設定** ✅完了（2026-07-15確認：本番Cloud Run環境変数に両方とも設定済み、`/settings`でも「設定済み」表示を確認）
+   - [x] SFでCC_01 / CC_02のPricebookEntry IDを確認し、`SF_PRICEBOOK_ENTRY_ID_CC01` / `CC02` を本番`.env`に設定
+   - [x] 設定画面（`/settings`）下部で設定状況を確認できる
 
 2. **番号マスタ初期データ移行**
    - [ ] 旧 `phone_numbers`（取引先紐付けは `channel_groups.tenant_id` または `tenant_assignments` 経由）→ `ip_numbers` へ移行

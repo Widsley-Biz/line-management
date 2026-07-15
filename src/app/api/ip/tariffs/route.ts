@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { DEFAULT_TARIFF } from "@/lib/ip-billing";
 
-function parseRates(body: Record<string, unknown>) {
+function parseRates(body: Record<string, unknown>): { fixedRate: number; mobileRate: number; naviSecRate: number; naviAmountRate: number } | { error: string } {
   const fixedRate = Number(body.fixedRate);
   const mobileRate = Number(body.mobileRate);
   const naviSecRate = Number(body.naviSecRate);
@@ -16,7 +16,11 @@ function parseRates(body: Record<string, unknown>) {
       (v) => Number.isNaN(v) || v < 0
     )
   ) {
-    return null;
+    return { error: "タリフの値が不正です" };
+  }
+  // ナビダイヤルは秒課金・金額課金のどちらか一方のみで計算するため、両方に値を入れることはできない
+  if (naviSecRate > 0 && naviAmountRate > 0) {
+    return { error: "ナビ秒課金とナビ金額課金は同時に設定できません（どちらかを0にしてください）" };
   }
   return { fixedRate, mobileRate, naviSecRate, naviAmountRate };
 }
@@ -26,10 +30,11 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const tenantId = (body.tenantId as string | null) || null;
-    const rates = parseRates(body);
-    if (!rates) {
-      return NextResponse.json({ error: "タリフの値が不正です" }, { status: 400 });
+    const parsed = parseRates(body);
+    if ("error" in parsed) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
+    const rates = parsed;
 
     const now = new Date().toISOString();
 

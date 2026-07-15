@@ -17,7 +17,7 @@ export type Tariff = {
 export const DEFAULT_TARIFF: Tariff = {
   fixedRate: 0.06,
   mobileRate: 0.25,
-  naviSecRate: 1.2,
+  naviSecRate: 0,
   naviAmountRate: 10.5,
 };
 

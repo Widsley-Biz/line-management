@@ -31,21 +31,26 @@ const RATE_FIELDS: { key: keyof Rates; label: string; unit: string }[] = [
 
 function RateInputs({ defaults }: { defaults: Rates }) {
   return (
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-      {RATE_FIELDS.map(({ key, label, unit }) => (
-        <div key={key} className="space-y-1">
-          <Label className="text-xs">{label}（{unit}）</Label>
-          <Input
-            name={key}
-            type="number"
-            step="any"
-            min="0"
-            defaultValue={defaults[key]}
-            required
-            className="h-8 text-sm"
-          />
-        </div>
-      ))}
+    <div className="space-y-1">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {RATE_FIELDS.map(({ key, label, unit }) => (
+          <div key={key} className="space-y-1">
+            <Label className="text-xs">{label}（{unit}）</Label>
+            <Input
+              name={key}
+              type="number"
+              step="any"
+              min="0"
+              defaultValue={defaults[key]}
+              required
+              className="h-8 text-sm"
+            />
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-gray-400">
+        ※ ③ナビ秒課金・④ナビ金額課金はどちらか一方のみ設定できます（両方に値を入れることはできません。ナビダイヤルは通常④で計算）
+      </p>
     </div>
   );
 }
@@ -74,14 +79,21 @@ export function IpTariffsClient({
     form: HTMLFormElement,
     tenantId: string | null
   ) {
-    setIsSubmitting(true);
     setError(null);
+    const naviSecRate = Number((form.elements.namedItem("naviSecRate") as HTMLInputElement).value);
+    const naviAmountRate = Number((form.elements.namedItem("naviAmountRate") as HTMLInputElement).value);
+    if (naviSecRate > 0 && naviAmountRate > 0) {
+      setError("ナビ秒課金とナビ金額課金は同時に設定できません（どちらかを0にしてください）");
+      return;
+    }
+
+    setIsSubmitting(true);
     const body = {
       tenantId,
       fixedRate: (form.elements.namedItem("fixedRate") as HTMLInputElement).value,
       mobileRate: (form.elements.namedItem("mobileRate") as HTMLInputElement).value,
-      naviSecRate: (form.elements.namedItem("naviSecRate") as HTMLInputElement).value,
-      naviAmountRate: (form.elements.namedItem("naviAmountRate") as HTMLInputElement).value,
+      naviSecRate,
+      naviAmountRate,
     };
     const res = await fetch("/api/ip/tariffs", {
       method: "POST",

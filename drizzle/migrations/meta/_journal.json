@@ -78,6 +78,13 @@
       "when": 1783700000000,
       "tag": "0010_ip_master_unmatched",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1783800000000,
+      "tag": "0011_navi_sec_rate_default_zero",
+      "breakpoints": true
     }
   ]
 }

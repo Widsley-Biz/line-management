@@ -192,7 +192,7 @@ export const ipTariffs = sqliteTable(
     tenantId: text("tenant_id").references(() => tenants.id), // NULL = デフォルトタリフ
     fixedRate: real("fixed_rate").notNull().default(0.06),        // ①固定 円/秒
     mobileRate: real("mobile_rate").notNull().default(0.25),      // ②携帯 円/秒
-    naviSecRate: real("navi_sec_rate").notNull().default(1.2),    // ③ナビ秒課金 円/秒
+    naviSecRate: real("navi_sec_rate").notNull().default(0),    // ③ナビ秒課金 円/秒
     naviAmountRate: real("navi_amount_rate").notNull().default(10.5), // ④ナビ金額課金 倍率
     createdAt: text("created_at")
       .notNull()

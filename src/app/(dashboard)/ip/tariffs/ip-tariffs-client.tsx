@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calculator, Plus, Pencil, RotateCcw } from "lucide-react";
+import { TenantCombobox } from "@/components/tenant-combobox";
 
 type Rates = {
   fixedRate: number;
@@ -61,6 +62,7 @@ export function IpTariffsClient({
   const [editingDefault, setEditingDefault] = useState(false);
   const [showOverrideForm, setShowOverrideForm] = useState(false);
   const [editTarget, setEditTarget] = useState<Override | null>(null);
+  const [newTenantId, setNewTenantId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -169,7 +171,7 @@ export function IpTariffsClient({
           <CardTitle className="text-base">取引先別タリフ（上書き設定）</CardTitle>
           <Button
             size="sm"
-            onClick={() => { setEditTarget(null); setShowOverrideForm(true); }}
+            onClick={() => { setEditTarget(null); setNewTenantId(null); setShowOverrideForm(true); }}
             disabled={availableTenants.length === 0}
           >
             <Plus className="h-4 w-4 mr-1" />上書き追加
@@ -181,9 +183,7 @@ export function IpTariffsClient({
               onSubmit={(e) => {
                 e.preventDefault();
                 const form = e.currentTarget;
-                const tenantId = editTarget
-                  ? editTarget.tenantId
-                  : (form.elements.namedItem("tenantId") as HTMLSelectElement).value;
+                const tenantId = editTarget ? editTarget.tenantId : newTenantId;
                 if (!tenantId) return;
                 submitRates(form, tenantId);
               }}
@@ -195,29 +195,24 @@ export function IpTariffsClient({
                   {editTarget ? (
                     <p className="text-sm font-medium py-1.5">{editTarget.companyName}</p>
                   ) : (
-                    <select
-                      name="tenantId"
-                      required
-                      className="w-full h-8 rounded-md border border-input bg-background px-3 py-1 text-sm"
-                    >
-                      <option value="">選択してください</option>
-                      {availableTenants.map((t) => (
-                        <option key={t.id} value={t.id}>{t.companyName}</option>
-                      ))}
-                    </select>
+                    <TenantCombobox
+                      tenants={availableTenants}
+                      placeholder="取引先を検索..."
+                      onChange={(t) => setNewTenantId(t?.id ?? null)}
+                    />
                   )}
                 </div>
               </div>
               <RateInputs defaults={editTarget ?? defaultTariff} />
               <div className="flex gap-2">
-                <Button type="submit" size="sm" disabled={isSubmitting}>
+                <Button type="submit" size="sm" disabled={isSubmitting || (!editTarget && !newTenantId)}>
                   {isSubmitting ? "保存中..." : editTarget ? "更新する" : "登録する"}
                 </Button>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => { setShowOverrideForm(false); setEditTarget(null); }}
+                  onClick={() => { setShowOverrideForm(false); setEditTarget(null); setNewTenantId(null); }}
                 >
                   キャンセル
                 </Button>

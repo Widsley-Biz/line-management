@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Upload, FileText, Loader2, Smartphone, CheckCircle2, AlertTriangle, X, Network } from "lucide-react";
+import { formatJapanesePhoneNumber } from "@/lib/format";
 import {
   Dialog,
   DialogContent,
@@ -463,7 +464,7 @@ export function ImportForm() {
                         <div className="max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
                           {r.unmatchedNumbers!.map((u, i) => (
                             <p key={i} className="text-xs text-amber-800 font-mono">
-                              {u.phoneNumber}（{u.rowCount}行 / {u.totalSeconds}秒）
+                              {formatJapanesePhoneNumber(u.phoneNumber)}（{u.rowCount}行 / {u.totalSeconds}秒）
                             </p>
                           ))}
                         </div>

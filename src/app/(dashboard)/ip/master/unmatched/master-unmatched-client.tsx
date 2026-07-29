@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TenantCombobox } from "@/components/tenant-combobox";
 import { CheckCircle, EyeOff, Trash2 } from "lucide-react";
+import { formatJapanesePhoneNumber } from "@/lib/format";
 
 type Row = {
   id: string;
@@ -208,8 +209,8 @@ export function MasterUnmatchedClient({ rows: initial, tenants }: { rows: Row[];
                           aria-label={`${r.phoneNumber}を選択`}
                         />
                       </td>
-                      <td className="px-4 py-3 font-mono font-medium text-gray-800">{r.phoneNumber}</td>
-                      <td className="px-4 py-3 font-mono text-gray-500">{r.subNumber ?? "-"}</td>
+                      <td className="px-4 py-3 font-mono font-medium text-gray-800">{formatJapanesePhoneNumber(r.phoneNumber)}</td>
+                      <td className="px-4 py-3 font-mono text-gray-500">{r.subNumber ? formatJapanesePhoneNumber(r.subNumber) : "-"}</td>
                       <td className="px-4 py-3 text-gray-700">{r.attemptedTenantKey}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs truncate max-w-40" title={r.sourceName ?? ""}>
                         {r.sourceName ?? "-"}

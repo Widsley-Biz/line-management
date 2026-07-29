@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatSeconds } from "@/lib/format";
+import { formatSeconds, formatJapanesePhoneNumber } from "@/lib/format";
 import { TenantCombobox } from "@/components/tenant-combobox";
 import { CheckCircle, EyeOff, Trash2 } from "lucide-react";
 
@@ -176,7 +176,7 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
                   return (
                     <tr key={r.id} className={`border-b hover:bg-gray-50 ${r.status === "ignored" ? "opacity-50" : ""}`}>
                       <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{y}年{mo}月</td>
-                      <td className="px-4 py-3 font-mono font-medium text-gray-800">{r.phoneNumber}</td>
+                      <td className="px-4 py-3 font-mono font-medium text-gray-800">{formatJapanesePhoneNumber(r.phoneNumber)}</td>
                       <td className="px-4 py-3">
                         {itemEntries.length === 0 ? (
                           <span className="text-gray-300 text-xs">なし</span>

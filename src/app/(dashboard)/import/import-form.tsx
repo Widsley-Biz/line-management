@@ -54,6 +54,7 @@ type CdrFileResult = {
 export function ImportForm() {
   const [yearMonth, setYearMonth] = useState("");
   const [cdrFiles, setCdrFiles] = useState<File[]>([]);
+  const [isCdrDragging, setIsCdrDragging] = useState(false);
   const [softBankFile, setSoftBankFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [cdrResults, setCdrResults] = useState<CdrFileResult[] | null>(null);
@@ -64,8 +65,7 @@ export function ImportForm() {
   const [sbPreview, setSbPreview] = useState<SbPreview | null>(null);
   const [unknownClassifications, setUnknownClassifications] = useState<UnknownClassification[]>([]);
 
-  const handleCdrFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
+  const addCdrFiles = (files: File[]) => {
     if (files.length === 0) return;
     // 既存の選択に追加（同名は置き換え）
     setCdrFiles((prev) => {
@@ -73,7 +73,20 @@ export function ImportForm() {
       return [...prev.filter((f) => !names.has(f.name)), ...files];
     });
     setCdrResults(null);
+  };
+
+  const handleCdrFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    addCdrFiles(Array.from(e.target.files ?? []));
     e.target.value = "";
+  };
+
+  const handleCdrDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsCdrDragging(false);
+    const files = Array.from(e.dataTransfer.files ?? []).filter((f) =>
+      f.name.toLowerCase().endsWith(".csv")
+    );
+    addCdrFiles(files);
   };
 
   const removeCdrFile = (name: string) => {
@@ -307,10 +320,22 @@ export function ImportForm() {
             <p>※ 複数ファイルを同時にアップロードできます（1ファイル = 1請求アカウント）。利用月はファイル内の「利用月」列から自動判定されます。</p>
             <p>※ 取り込みは<span className="font-medium text-gray-700">差分投入</span>です。まったく同じファイルは自動でスキップされ、同一の請求アカウント×利用月で内容が異なるファイルは追加分として加算・再集計されます。</p>
           </div>
-          <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-indigo-200 rounded-lg cursor-pointer hover:border-indigo-400 transition-colors">
+          <label
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsCdrDragging(true);
+            }}
+            onDragLeave={() => setIsCdrDragging(false)}
+            onDrop={handleCdrDrop}
+            className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+              isCdrDragging
+                ? "border-indigo-500 bg-indigo-50"
+                : "border-indigo-200 hover:border-indigo-400"
+            }`}
+          >
             <Upload className="h-6 w-6 text-indigo-400 mb-1" />
             <span className="text-sm text-gray-500">
-              クリックしてファイルを選択（.csv / 複数可）
+              クリックまたはドラッグ&ドロップでファイルを選択（.csv / 複数可）
             </span>
             <input
               type="file"

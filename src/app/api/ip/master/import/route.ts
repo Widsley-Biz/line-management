@@ -4,7 +4,7 @@ import { ipNumbers, ipMasterUnmatched, tenants } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
-import { normalizePhoneNumber } from "@/lib/ip-billing";
+import { normalizePhoneNumber, phoneMatchKey } from "@/lib/ip-billing";
 
 function parseCsvLine(line: string): string[] {
   const cols: string[] = [];
@@ -50,13 +50,15 @@ export async function POST(req: NextRequest) {
       .select({ phoneNumber: ipNumbers.phoneNumber })
       .from(ipNumbers);
     const existingPhones = new Set(
-      existingRows.map((l) => normalizePhoneNumber(l.phoneNumber))
+      existingRows.map((l) => phoneMatchKey(l.phoneNumber))
     );
 
     const existingUnmatched = await db
       .select({ id: ipMasterUnmatched.id, phoneNumber: ipMasterUnmatched.phoneNumber })
       .from(ipMasterUnmatched);
-    const unmatchedByPhone = new Map(existingUnmatched.map((u) => [u.phoneNumber, u.id]));
+    const unmatchedByPhone = new Map(
+      existingUnmatched.map((u) => [phoneMatchKey(u.phoneNumber), u.id])
+    );
 
     const now = new Date().toISOString();
     const sourceName = file.name.slice(0, 200);
@@ -84,8 +86,9 @@ export async function POST(req: NextRequest) {
       }
 
       const tenantId = tenantByCompanyName.get(tenantKey) ?? tenantBySlug.get(tenantKey);
+      const matchKey = phoneMatchKey(phoneNumber);
 
-      if (existingPhones.has(phoneNumber)) {
+      if (existingPhones.has(matchKey)) {
         duplicatePhones.push(phoneNumber);
         skipped++;
         continue;
@@ -95,7 +98,7 @@ export async function POST(req: NextRequest) {
         unmatchedTenants.push(tenantKey);
         skipped++;
 
-        const existingId = unmatchedByPhone.get(phoneNumber);
+        const existingId = unmatchedByPhone.get(matchKey);
         if (existingId) {
           await db
             .update(ipMasterUnmatched)
@@ -113,7 +116,7 @@ export async function POST(req: NextRequest) {
             createdAt: now,
             updatedAt: now,
           });
-          unmatchedByPhone.set(phoneNumber, id);
+          unmatchedByPhone.set(matchKey, id);
         }
         unmatchedSaved++;
         continue;
@@ -130,7 +133,7 @@ export async function POST(req: NextRequest) {
         updatedAt: now,
       });
 
-      existingPhones.add(phoneNumber);
+      existingPhones.add(matchKey);
       inserted++;
     }
 

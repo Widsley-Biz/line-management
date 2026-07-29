@@ -15,6 +15,7 @@ import {
   getTariffForTenant,
   normalizePhoneNumber,
   normalizeYearMonth,
+  phoneMatchKey,
   recalcIpUsage,
   type CallCategory,
   type Tariff,
@@ -110,11 +111,12 @@ export async function assignUnmatchedToTenant(
 
   const now = new Date().toISOString();
 
-  const [existingNumber] = await db
-    .select({ id: ipNumbers.id })
-    .from(ipNumbers)
-    .where(eq(ipNumbers.phoneNumber, row.phoneNumber))
-    .limit(1);
+  // ハイフン・先頭0の有無を無視して既存登録の有無を確認する
+  const allNumbers = await db
+    .select({ id: ipNumbers.id, phoneNumber: ipNumbers.phoneNumber })
+    .from(ipNumbers);
+  const targetKey = phoneMatchKey(row.phoneNumber);
+  const existingNumber = allNumbers.find((n) => phoneMatchKey(n.phoneNumber) === targetKey);
   if (!existingNumber) {
     await db.insert(ipNumbers).values({
       id: randomUUID(),
@@ -200,9 +202,9 @@ export async function importCdrFile(
   const mainNumberMap = new Map<string, string>(); // 表番号 → tenantId
   const subNumberMap = new Map<string, string>();  // 裏番号 → tenantId
   for (const row of numberRows) {
-    mainNumberMap.set(normalizePhoneNumber(row.phoneNumber), row.tenantId);
+    mainNumberMap.set(phoneMatchKey(row.phoneNumber), row.tenantId);
     if (row.subNumber) {
-      subNumberMap.set(normalizePhoneNumber(row.subNumber), row.tenantId);
+      subNumberMap.set(phoneMatchKey(row.subNumber), row.tenantId);
     }
   }
 
@@ -259,9 +261,10 @@ export async function importCdrFile(
       continue;
     }
 
-    // 表番号 → 裏番号 の順で名寄せ
+    // 表番号 → 裏番号 の順で名寄せ（ハイフン・先頭0の有無を無視して照合）
+    const matchKey = phoneMatchKey(normalized);
     const tenantId =
-      mainNumberMap.get(normalized) ?? subNumberMap.get(normalized);
+      mainNumberMap.get(matchKey) ?? subNumberMap.get(matchKey);
     if (!tenantId) {
       const entry = unmatchedMap.get(normalized) ?? {
         phoneNumber: rawNumber,

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Pencil, Trash2, Network, Upload, FileText, FileWarning } from "lucide-react";
+import { formatJapanesePhoneNumber } from "@/lib/format";
 
 type IpNumber = {
   id: string;
@@ -331,8 +332,8 @@ export function IpMasterClient({ numbers, tenants, unmatchedCount }: Props) {
                 ) : (
                   filtered.map((n) => (
                     <tr key={n.id} className="border-b hover:bg-gray-50">
-                      <td className="py-2 pr-4 font-mono">{n.phoneNumber}</td>
-                      <td className="py-2 pr-4 font-mono text-gray-500">{n.subNumber ?? "-"}</td>
+                      <td className="py-2 pr-4 font-mono">{formatJapanesePhoneNumber(n.phoneNumber)}</td>
+                      <td className="py-2 pr-4 font-mono text-gray-500">{n.subNumber ? formatJapanesePhoneNumber(n.subNumber) : "-"}</td>
                       <td className="py-2 pr-4">{n.companyName}</td>
                       <td className="py-2 pr-4">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${

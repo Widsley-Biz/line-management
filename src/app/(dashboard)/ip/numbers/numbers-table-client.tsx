@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo, Fragment } from "react";
 import { Search, ChevronDown, ChevronRight, Building2, Network, TrendingUp, Download } from "lucide-react";
-import { formatYen, formatSeconds } from "@/lib/format";
+import { formatYen, formatSeconds, formatJapanesePhoneNumber } from "@/lib/format";
 import { Card, CardContent } from "@/components/ui/card";
 
 type NumberRow = {
@@ -140,8 +140,8 @@ export function NumbersTable({
                       <ChevronRight className="h-4 w-4" />
                     )}
                   </td>
-                  <td className="px-4 py-3 font-mono">{r.phoneNumber}</td>
-                  <td className="px-4 py-3 font-mono text-gray-500">{r.subNumber ?? "-"}</td>
+                  <td className="px-4 py-3 font-mono">{formatJapanesePhoneNumber(r.phoneNumber)}</td>
+                  <td className="px-4 py-3 font-mono text-gray-500">{r.subNumber ? formatJapanesePhoneNumber(r.subNumber) : "-"}</td>
                   <td className="px-4 py-3 text-gray-700">{r.companyName}</td>
                   <td className="px-4 py-3">
                     {r.status ? (

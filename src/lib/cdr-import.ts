@@ -8,6 +8,7 @@ import {
 } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { createHash, randomUUID } from "crypto";
+import { decodeCsvBuffer } from "@/lib/csv";
 import {
   classifyCallType,
   computeAmount,
@@ -51,15 +52,9 @@ export function parseCsvLine(line: string): string[] {
   return cols;
 }
 
-/**
- * CDRはShift-JIS前提で復号する。
- * ただしUTF-8として完全に妥当なバイト列（置換文字なし）はUTF-8として扱う
- * （Shift-JISファイルをUTF-8で読むと必ず置換文字が発生するため誤判定しない）。
- */
+/** CDRの復号は共通のCSV文字コード自動判定に委譲する（UTF-8 / Shift-JIS） */
 export function decodeCdrBuffer(buffer: ArrayBuffer): string {
-  const utf8 = new TextDecoder("utf-8").decode(buffer);
-  if (!utf8.includes("�")) return utf8;
-  return new TextDecoder("shift_jis").decode(buffer);
+  return decodeCsvBuffer(buffer);
 }
 
 export type UnmatchedNumber = {

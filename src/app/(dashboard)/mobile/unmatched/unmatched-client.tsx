@@ -63,7 +63,7 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
   const allFilteredChecked =
     filtered.length > 0 && filtered.every((r) => checked[r.id]);
 
-  // 確認ポップアップ用: 選択行の年月ごとの件数・超過金額
+  // 確認ポップアップ用: 選択行の利用年月ごとの件数・超過金額
   const checkedByMonth = [
     ...checkedRows
       .reduce((map, r) => {
@@ -78,7 +78,8 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
   ].sort(([a], [b]) => a.localeCompare(b));
 
   const checkedTotal = checkedRows.reduce((s, r) => s + r.overageTotal, 0);
-  const checkedWithAmount = checkedRows.filter((r) => r.overageTotal > 0).length;
+  // マイナス（ご返金）も請求に影響するため「金額あり」として扱う
+  const checkedWithAmount = checkedRows.filter((r) => r.overageTotal !== 0).length;
 
   // 現在の絞り込み対象をまとめて選択／解除する（月で絞ってから全選択する運用）
   function toggleAllFiltered() {
@@ -185,11 +186,11 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
             </div>
 
             <div>
-              <p className="text-xs font-medium text-gray-600 mb-1.5">対象年月の内訳</p>
+              <p className="text-xs font-medium text-gray-600 mb-1.5">対象利用年月の内訳</p>
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b text-gray-500">
-                    <th className="text-left py-1.5 font-medium">年月</th>
+                    <th className="text-left py-1.5 font-medium">利用年月</th>
                     <th className="text-right py-1.5 font-medium">件数</th>
                     <th className="text-right py-1.5 font-medium">超過金額</th>
                   </tr>
@@ -199,7 +200,7 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
                     <tr key={ym} className="border-b last:border-0">
                       <td className="py-1.5 text-gray-700">{formatMonth(ym)}</td>
                       <td className="py-1.5 text-right text-gray-700">{v.count} 件</td>
-                      <td className={`py-1.5 text-right font-mono ${v.total > 0 ? "text-red-600" : "text-gray-400"}`}>
+                      <td className={`py-1.5 text-right font-mono ${v.total > 0 ? "text-red-600" : v.total < 0 ? "text-blue-600" : "text-gray-400"}`}>
                         {formatYen(v.total)}
                       </td>
                     </tr>
@@ -210,7 +211,7 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
 
             {checkedWithAmount > 0 ? (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                超過金額が入っているレコードが <span className="font-bold">{checkedWithAmount}件</span> 含まれています。
+                金額が入っているレコード（ご返金などのマイナスを含む）が <span className="font-bold">{checkedWithAmount}件</span> 含まれています。
                 削除すると取引先へ割り当てられなくなり、この金額は請求に反映されません。
                 本当に削除してよいか確認してください。
               </div>
@@ -341,7 +342,7 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
                       title={yearMonthFilter ? `${formatMonth(yearMonthFilter)}の表示中${filtered.length}件を全て選択` : `表示中${filtered.length}件を全て選択`}
                     />
                   </th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">年月</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">利用年月</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">氏名（CSV）</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">電話番号</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">課金明細</th>
@@ -354,7 +355,8 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
               <tbody>
                 {filtered.map((r) => {
                   const items = parseItems(r.itemsJson);
-                  const itemEntries = Object.entries(items).filter(([, v]) => v > 0);
+                  // マイナス（ご返金・調整）も表示対象にする
+                  const itemEntries = Object.entries(items).filter(([, v]) => v !== 0);
                   const [y, mo] = r.yearMonth.split("-").map(Number);
                   const isPending = r.status === "pending";
                   return (
@@ -385,7 +387,7 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
                         )}
                       </td>
                       <td className="px-4 py-3 text-right font-medium">
-                        <span className={r.overageTotal > 0 ? "text-red-600" : "text-gray-400"}>
+                        <span className={r.overageTotal > 0 ? "text-red-600" : r.overageTotal < 0 ? "text-blue-600" : "text-gray-400"}>
                           {formatYen(r.overageTotal)}
                         </span>
                       </td>

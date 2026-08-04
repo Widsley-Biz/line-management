@@ -224,7 +224,8 @@ async function importSoftBank(
       for (const [colIdx, itemName] of colNameMap) {
         const raw = values[colIdx];
         const val = typeof raw === "number" ? raw : parseFloat(String(raw ?? "")) || 0;
-        if (val <= 0) continue;
+        // マイナス金額（ご返金・調整）は超過金額から差し引くため対象に含める
+        if (val === 0) continue;
         const dbItem = itemMap.get(itemName);
         if (dbItem?.isBillable) {
           entry.overageTotal += val;
@@ -241,7 +242,8 @@ async function importSoftBank(
     for (const [colIdx, itemName] of colNameMap) {
       const raw = values[colIdx];
       const val = typeof raw === "number" ? raw : parseFloat(String(raw ?? "")) || 0;
-      if (val <= 0) continue;
+      // マイナス金額（ご返金・調整）は超過金額から差し引くため対象に含める
+      if (val === 0) continue;
 
       // colNameMap はマスタと完全一致した列のみ
       if (itemMap.get(itemName)?.isBillable) {

@@ -10,6 +10,7 @@ import {
 import { eq, sql, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
+import { decodeCsvBuffer } from "@/lib/csv";
 
 interface ImportResult {
   success: number;
@@ -76,7 +77,9 @@ async function importSoftBank(
   const dataRows: (string | number | null | undefined)[][] = [];
 
   if (isCSV) {
-    const text = new TextDecoder("utf-8").decode(buffer);
+    // SoftBankのCSV出力はShift-JIS(CP932)の場合があるため文字コードを自動判定する
+    // （UTF-8決め打ちだと日本語ヘッダが文字化けし、氏名列の検出が部署名列にずれる）
+    const text = decodeCsvBuffer(buffer);
     const lines = text.split("\n").filter((l) => l.trim());
     if (lines.length > 0) {
       headerRow = [null, ...parseCsvLine(lines[0])];

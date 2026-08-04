@@ -6,8 +6,9 @@ import {
   mobileUsageDetails,
   tenants,
 } from "@/lib/db/schema";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { logActivity } from "@/lib/audit";
 
 // GET: pending な未照合一覧を返す
 export async function GET() {
@@ -112,9 +113,27 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({ error: "invalid action" }, { status: 400 });
 }
 
-// DELETE: 未照合レコードを削除
+// DELETE: 未照合レコードを削除（単体 id / 複数 ids の一括削除に対応）
 export async function DELETE(req: NextRequest) {
-  const { id } = await req.json();
+  const body = await req.json();
+
+  if (Array.isArray(body?.ids)) {
+    const ids: string[] = body.ids.filter((v: unknown) => typeof v === "string");
+    if (ids.length === 0) {
+      return NextResponse.json({ error: "ids is empty" }, { status: 400 });
+    }
+    await db
+      .delete(mobileImportUnmatched)
+      .where(inArray(mobileImportUnmatched.id, ids));
+    await logActivity({
+      actionType: "delete",
+      message: `携帯未照合を選択削除: ${ids.length}件`,
+      targetTable: "mobile_import_unmatched",
+    });
+    return NextResponse.json({ ok: true, deleted: ids.length });
+  }
+
+  const { id } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   await db.delete(mobileImportUnmatched).where(eq(mobileImportUnmatched.id, id));
   return NextResponse.json({ ok: true });

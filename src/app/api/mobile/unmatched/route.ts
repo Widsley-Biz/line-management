@@ -9,6 +9,7 @@ import {
 import { eq, and, ne, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
+import { runInTransaction } from "@/lib/db/tx";
 
 // GET: pending な未照合一覧を返す
 export async function GET() {
@@ -22,6 +23,22 @@ export async function GET() {
 
 // PATCH: 取引先割当（assign）または無視（ignore）
 export async function PATCH(req: NextRequest) {
+  try {
+    return await patchUnmatched(req);
+  } catch (error) {
+    // 失敗時はトランザクションがロールバックされ、金額は加算されていない
+    const detail = error instanceof Error ? error.message : "不明なエラー";
+    console.error("Mobile unmatched PATCH error:", error);
+    return NextResponse.json(
+      {
+        error: `処理に失敗しました。変更は取り消されています（金額は加算されていません）。そのまま再実行して問題ありません。詳細: ${detail}`,
+      },
+      { status: 500 }
+    );
+  }
+}
+
+async function patchUnmatched(req: NextRequest) {
   const { id, action, tenantId } = await req.json() as {
     id: string;
     action: "assign" | "ignore";
@@ -56,56 +73,61 @@ export async function PATCH(req: NextRequest) {
     const items = JSON.parse(itemsJson) as Record<string, number>;
     const sfStatus = overageTotal > 0 ? "未送信" : "超過なし";
 
-    // mobileUsages を upsert
-    const existing = await db
-      .select({ id: mobileUsages.id, overageTotal: mobileUsages.overageTotal, totalLines: mobileUsages.totalLines })
-      .from(mobileUsages)
-      .where(and(eq(mobileUsages.tenantId, tenantId), eq(mobileUsages.yearMonth, yearMonth)))
-      .then((r) => r[0] ?? null);
+    let usageId = "";
 
-    let usageId: string;
-    if (existing) {
-      usageId = existing.id;
-      const newTotal = existing.overageTotal + overageTotal;
-      await db
-        .update(mobileUsages)
-        .set({ overageTotal: newTotal, totalLines: existing.totalLines + 1, sfStatus: newTotal > 0 ? "未送信" : "超過なし", updatedAt: now })
-        .where(eq(mobileUsages.id, usageId));
-    } else {
-      usageId = randomUUID();
-      await db.insert(mobileUsages).values({
-        id: usageId,
+    // 加算・明細挿入・状態更新は1トランザクションにまとめる。
+    // 途中で失敗すると金額だけ加算され、再実行で二重計上になるため。
+    await runInTransaction(async () => {
+      // mobileUsages を upsert
+      const existing = await db
+        .select({ id: mobileUsages.id, overageTotal: mobileUsages.overageTotal, totalLines: mobileUsages.totalLines })
+        .from(mobileUsages)
+        .where(and(eq(mobileUsages.tenantId, tenantId), eq(mobileUsages.yearMonth, yearMonth)))
+        .then((r) => r[0] ?? null);
+
+      if (existing) {
+        usageId = existing.id;
+        const newTotal = existing.overageTotal + overageTotal;
+        await db
+          .update(mobileUsages)
+          .set({ overageTotal: newTotal, totalLines: existing.totalLines + 1, sfStatus: newTotal > 0 ? "未送信" : "超過なし", updatedAt: now })
+          .where(eq(mobileUsages.id, usageId));
+      } else {
+        usageId = randomUUID();
+        await db.insert(mobileUsages).values({
+          id: usageId,
+          tenantId,
+          yearMonth,
+          totalLines: 1,
+          overageTotal,
+          sfStatus,
+          importedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      // mobileUsageDetails に明細挿入
+      const detailInserts = Object.entries(items).map(([itemName, amount]) => ({
+        id: randomUUID(),
+        mobileUsageId: usageId,
         tenantId,
+        phoneNumber: phoneNumber ?? row.rawName,
+        itemName,
+        amount,
         yearMonth,
-        totalLines: 1,
-        overageTotal,
-        sfStatus,
-        importedAt: now,
         createdAt: now,
-        updatedAt: now,
-      });
-    }
+      }));
+      if (detailInserts.length > 0) {
+        await db.insert(mobileUsageDetails).values(detailInserts);
+      }
 
-    // mobileUsageDetails に明細挿入
-    const detailInserts = Object.entries(items).map(([itemName, amount]) => ({
-      id: randomUUID(),
-      mobileUsageId: usageId,
-      tenantId,
-      phoneNumber: phoneNumber ?? row.rawName,
-      itemName,
-      amount,
-      yearMonth,
-      createdAt: now,
-    }));
-    if (detailInserts.length > 0) {
-      await db.insert(mobileUsageDetails).values(detailInserts);
-    }
-
-    // 未照合レコードを resolved に更新
-    await db
-      .update(mobileImportUnmatched)
-      .set({ status: "resolved", resolvedTenantId: tenantId, updatedAt: now })
-      .where(eq(mobileImportUnmatched.id, id));
+      // 未照合レコードを resolved に更新
+      await db
+        .update(mobileImportUnmatched)
+        .set({ status: "resolved", resolvedTenantId: tenantId, updatedAt: now })
+        .where(eq(mobileImportUnmatched.id, id));
+    });
 
     return NextResponse.json({ ok: true, usageId });
   }

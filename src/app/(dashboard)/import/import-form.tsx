@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Upload, FileText, Loader2, Smartphone, CheckCircle2, AlertTriangle, X, Network } from "lucide-react";
 import { formatJapanesePhoneNumber } from "@/lib/format";
+import { readJson } from "@/lib/fetch-json";
 import {
   Dialog,
   DialogContent,
@@ -122,12 +123,12 @@ export function ImportForm() {
         fd.append("previewOnly", "true");
 
         const res = await fetch("/api/billing/import", { method: "POST", body: fd });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setError(data.error ?? "プレビューの取得に失敗しました");
+        const result = await readJson<{ softBank?: { preview?: SbPreview } }>(res);
+        if (!result.ok) {
+          setError(result.error);
           return;
         }
+        const data = result.data;
 
         const preview: SbPreview = data.softBank?.preview ?? { billingItems: [], unknownItems: [] };
         setSbPreview(preview);
@@ -158,11 +159,11 @@ export function ImportForm() {
         const fd = new FormData();
         for (const f of cdrFiles) fd.append("files", f);
         const res = await fetch("/api/ip/import", { method: "POST", body: fd });
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error ?? "CDRインポートに失敗しました");
+        const result = await readJson<{ results?: CdrFileResult[] }>(res);
+        if (!result.ok) {
+          setError(result.error);
         } else {
-          setCdrResults(data.results ?? []);
+          setCdrResults(result.data.results ?? []);
           setCdrFiles([]);
         }
       }
@@ -173,11 +174,11 @@ export function ImportForm() {
         fd.append("yearMonth", yearMonth);
         fd.append("softBank", softBankFile);
         const res = await fetch("/api/billing/import", { method: "POST", body: fd });
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error ?? "SoftBankインポートに失敗しました");
+        const result = await readJson<{ softBank?: SoftBankImportResult }>(res);
+        if (!result.ok) {
+          setError(result.error);
         } else {
-          setSbResult(data.softBank ?? null);
+          setSbResult(result.data.softBank ?? null);
         }
       }
     } catch (e) {
@@ -416,8 +417,21 @@ export function ImportForm() {
         </CardContent>
       </Card>
 
+      {loading && (
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-start gap-2">
+          <Loader2 className="h-4 w-4 animate-spin mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">処理中です。完了するまでお待ちください。</p>
+            <p className="text-xs text-blue-700 mt-1">
+              明細が多いファイルは1分以上かかることがあります。この画面を閉じたり、他の操作をしたりしないでください。
+              処理中は他の利用者の操作も待たされます。
+            </p>
+          </div>
+        </div>
+      )}
+
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 whitespace-pre-wrap">
           {error}
         </div>
       )}

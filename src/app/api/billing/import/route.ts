@@ -11,6 +11,7 @@ import { eq, sql, and, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { decodeCsvBuffer } from "@/lib/csv";
+import { runInTransaction } from "@/lib/db/tx";
 
 interface ImportResult {
   success: number;
@@ -267,142 +268,146 @@ async function importSoftBank(
   const now = new Date().toISOString();
   let success = 0;
 
-  for (const [tenantId, fileOverage] of tenantOverage.entries()) {
-    const fileIdentifiers = tenantLines.get(tenantId) ?? new Set<string>();
-    const phoneMap = detailMap.get(tenantId);
+  // 以降の書き込みは1トランザクションにまとめる。
+  // 個別コミットだとGCSマウント上のDBでは同期が数百回発生しタイムアウトする。
+  await runInTransaction(async () => {
+    for (const [tenantId, fileOverage] of tenantOverage.entries()) {
+      const fileIdentifiers = tenantLines.get(tenantId) ?? new Set<string>();
+      const phoneMap = detailMap.get(tenantId);
 
-    const existing = await db
-      .select({ id: mobileUsages.id, totalLines: mobileUsages.totalLines })
-      .from(mobileUsages)
-      .where(
-        and(
-          eq(mobileUsages.tenantId, tenantId),
-          eq(mobileUsages.yearMonth, yearMonth)
+      const existing = await db
+        .select({ id: mobileUsages.id, totalLines: mobileUsages.totalLines })
+        .from(mobileUsages)
+        .where(
+          and(
+            eq(mobileUsages.tenantId, tenantId),
+            eq(mobileUsages.yearMonth, yearMonth)
+          )
         )
-      )
-      .then((rows) => rows[0] ?? null);
+        .then((rows) => rows[0] ?? null);
 
-    let usageId: string;
-    let oldPhones: Set<string> | null = null;
+      let usageId: string;
+      let oldPhones: Set<string> | null = null;
 
-    if (existing) {
-      usageId = existing.id;
-      // 差分マージ: 今回ファイルに含まれる回線（電話番号）の明細だけ入れ替え、
-      // 含まれない回線の既存明細は保持する（同一ファイルの再取込は冪等になる）
-      const oldDetails = await db
-        .select({ phoneNumber: mobileUsageDetails.phoneNumber })
-        .from(mobileUsageDetails)
-        .where(eq(mobileUsageDetails.mobileUsageId, usageId));
-      oldPhones = new Set(oldDetails.map((d) => d.phoneNumber));
+      if (existing) {
+        usageId = existing.id;
+        // 差分マージ: 今回ファイルに含まれる回線（電話番号）の明細だけ入れ替え、
+        // 含まれない回線の既存明細は保持する（同一ファイルの再取込は冪等になる）
+        const oldDetails = await db
+          .select({ phoneNumber: mobileUsageDetails.phoneNumber })
+          .from(mobileUsageDetails)
+          .where(eq(mobileUsageDetails.mobileUsageId, usageId));
+        oldPhones = new Set(oldDetails.map((d) => d.phoneNumber));
 
-      const filePhones = phoneMap ? [...phoneMap.keys()] : [];
-      if (filePhones.length > 0) {
-        await db
-          .delete(mobileUsageDetails)
-          .where(
-            and(
-              eq(mobileUsageDetails.mobileUsageId, usageId),
-              inArray(mobileUsageDetails.phoneNumber, filePhones)
-            )
-          );
+        const filePhones = phoneMap ? [...phoneMap.keys()] : [];
+        if (filePhones.length > 0) {
+          await db
+            .delete(mobileUsageDetails)
+            .where(
+              and(
+                eq(mobileUsageDetails.mobileUsageId, usageId),
+                inArray(mobileUsageDetails.phoneNumber, filePhones)
+              )
+            );
+        }
+      } else {
+        usageId = randomUUID();
+        await db.insert(mobileUsages).values({
+          id: usageId,
+          tenantId,
+          yearMonth,
+          totalLines: fileIdentifiers.size,
+          overageTotal: fileOverage,
+          sfStatus: fileOverage > 0 ? "未送信" : "超過なし",
+          importedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
       }
-    } else {
-      usageId = randomUUID();
-      await db.insert(mobileUsages).values({
-        id: usageId,
-        tenantId,
+
+      if (phoneMap) {
+        const detailInserts = [];
+        for (const [phoneNumber, items] of phoneMap.entries()) {
+          for (const { itemName, amount } of items) {
+            detailInserts.push({
+              id: randomUUID(),
+              mobileUsageId: usageId,
+              tenantId,
+              phoneNumber,
+              itemName,
+              amount,
+              yearMonth,
+              createdAt: now,
+            });
+          }
+        }
+        if (detailInserts.length > 0) {
+          await db.insert(mobileUsageDetails).values(detailInserts);
+        }
+      }
+
+      if (existing && oldPhones) {
+        // マージ後の明細から超過合計を再計算
+        const mergedOverage = await db
+          .select({
+            total: sql<number>`coalesce(sum(${mobileUsageDetails.amount}), 0)`,
+          })
+          .from(mobileUsageDetails)
+          .where(eq(mobileUsageDetails.mobileUsageId, usageId))
+          .then((rows) => rows[0]?.total ?? 0);
+        // 回線数は既存分＋今回新たに現れた回線を加算
+        // （超過ゼロで明細を持たない既存回線は識別できないため近似）
+        const addedLines = [...fileIdentifiers].filter(
+          (line) => !oldPhones.has(line)
+        ).length;
+        await db
+          .update(mobileUsages)
+          .set({
+            overageTotal: mergedOverage,
+            totalLines: existing.totalLines + addedLines,
+            sfStatus: mergedOverage > 0 ? "未送信" : "超過なし",
+            importedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(mobileUsages.id, usageId));
+      }
+
+      success++;
+    }
+
+    // 未照合行を DB に保存（今回ファイルに現れた氏名の pending のみ入れ替え、
+    // 他の pending・resolved/ignored は保持する）
+    if (unmatchedMap.size > 0) {
+      const pendingIds = await db
+        .select({ id: mobileImportUnmatched.id })
+        .from(mobileImportUnmatched)
+        .where(
+          and(
+            eq(mobileImportUnmatched.yearMonth, yearMonth),
+            eq(mobileImportUnmatched.status, "pending"),
+            inArray(mobileImportUnmatched.rawName, Array.from(unmatchedMap.keys()))
+          )
+        );
+      if (pendingIds.length > 0) {
+        await db
+          .delete(mobileImportUnmatched)
+          .where(inArray(mobileImportUnmatched.id, pendingIds.map((r) => r.id)));
+      }
+      const unmatchedInserts = Array.from(unmatchedMap.values()).map((entry) => ({
+        id: randomUUID(),
         yearMonth,
-        totalLines: fileIdentifiers.size,
-        overageTotal: fileOverage,
-        sfStatus: fileOverage > 0 ? "未送信" : "超過なし",
+        rawName: entry.rawName,
+        phoneNumber: entry.phoneNumber || null,
+        overageTotal: entry.overageTotal,
+        itemsJson: JSON.stringify(entry.items),
+        status: "pending" as const,
         importedAt: now,
         createdAt: now,
         updatedAt: now,
-      });
+      }));
+      await db.insert(mobileImportUnmatched).values(unmatchedInserts);
     }
-
-    if (phoneMap) {
-      const detailInserts = [];
-      for (const [phoneNumber, items] of phoneMap.entries()) {
-        for (const { itemName, amount } of items) {
-          detailInserts.push({
-            id: randomUUID(),
-            mobileUsageId: usageId,
-            tenantId,
-            phoneNumber,
-            itemName,
-            amount,
-            yearMonth,
-            createdAt: now,
-          });
-        }
-      }
-      if (detailInserts.length > 0) {
-        await db.insert(mobileUsageDetails).values(detailInserts);
-      }
-    }
-
-    if (existing && oldPhones) {
-      // マージ後の明細から超過合計を再計算
-      const mergedOverage = await db
-        .select({
-          total: sql<number>`coalesce(sum(${mobileUsageDetails.amount}), 0)`,
-        })
-        .from(mobileUsageDetails)
-        .where(eq(mobileUsageDetails.mobileUsageId, usageId))
-        .then((rows) => rows[0]?.total ?? 0);
-      // 回線数は既存分＋今回新たに現れた回線を加算
-      // （超過ゼロで明細を持たない既存回線は識別できないため近似）
-      const addedLines = [...fileIdentifiers].filter(
-        (line) => !oldPhones.has(line)
-      ).length;
-      await db
-        .update(mobileUsages)
-        .set({
-          overageTotal: mergedOverage,
-          totalLines: existing.totalLines + addedLines,
-          sfStatus: mergedOverage > 0 ? "未送信" : "超過なし",
-          importedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(mobileUsages.id, usageId));
-    }
-
-    success++;
-  }
-
-  // 未照合行を DB に保存（今回ファイルに現れた氏名の pending のみ入れ替え、
-  // 他の pending・resolved/ignored は保持する）
-  if (unmatchedMap.size > 0) {
-    const pendingIds = await db
-      .select({ id: mobileImportUnmatched.id })
-      .from(mobileImportUnmatched)
-      .where(
-        and(
-          eq(mobileImportUnmatched.yearMonth, yearMonth),
-          eq(mobileImportUnmatched.status, "pending"),
-          inArray(mobileImportUnmatched.rawName, Array.from(unmatchedMap.keys()))
-        )
-      );
-    if (pendingIds.length > 0) {
-      await db
-        .delete(mobileImportUnmatched)
-        .where(inArray(mobileImportUnmatched.id, pendingIds.map((r) => r.id)));
-    }
-    const unmatchedInserts = Array.from(unmatchedMap.values()).map((entry) => ({
-      id: randomUUID(),
-      yearMonth,
-      rawName: entry.rawName,
-      phoneNumber: entry.phoneNumber || null,
-      overageTotal: entry.overageTotal,
-      itemsJson: JSON.stringify(entry.items),
-      status: "pending" as const,
-      importedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    }));
-    await db.insert(mobileImportUnmatched).values(unmatchedInserts);
-  }
+  });
 
   const unmatchedNames = Array.from(unmatchedMap.keys());
 

@@ -9,6 +9,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { createHash, randomUUID } from "crypto";
 import { decodeCsvBuffer } from "@/lib/csv";
+import { runInTransaction } from "@/lib/db/tx";
 import {
   classifyCallType,
   computeAmount,
@@ -307,101 +308,105 @@ export async function importCdrFile(
   const affected = new Set<string>(); // tenantId × yearMonth
   const usageIdCache = new Map<string, string>();
 
-  for (const entry of agg.values()) {
-    const tariff = await tariffOf(entry.tenantId);
-    const usageKey = `${entry.tenantId} ${entry.yearMonth}`;
-    let usageId = usageIdCache.get(usageKey);
-    if (!usageId) {
-      usageId = await ensureIpUsage(entry.tenantId, entry.yearMonth);
-      usageIdCache.set(usageKey, usageId);
-    }
-
-    await db.insert(ipUsageDetails).values({
-      id: randomUUID(),
-      ipUsageId: usageId,
-      tenantId: entry.tenantId,
-      phoneNumber: entry.phoneNumber,
-      callCategory: entry.category,
-      callTypeName: entry.callTypeName,
-      totalSeconds: entry.totalSeconds,
-      sourceAmount: entry.sourceAmount,
-      computedAmount: computeAmount(
-        entry.category,
-        entry.totalSeconds,
-        entry.sourceAmount,
-        tariff
-      ),
-      yearMonth: entry.yearMonth,
-      createdAt: now,
-    });
-    affected.add(usageKey);
-  }
-
-  for (const key of affected) {
-    const [tenantId, yearMonth] = key.split(" ");
-    await recalcIpUsage(tenantId, yearMonth);
-  }
-
-  // 未紐付け番号を保存（同一番号×利用月のpending行があれば内訳を加算マージ）
-  for (const uAgg of unmatchedAggMap.values()) {
-    const [existing] = await db
-      .select()
-      .from(ipImportUnmatched)
-      .where(
-        and(
-          eq(ipImportUnmatched.phoneNumber, uAgg.phoneNumber),
-          eq(ipImportUnmatched.yearMonth, uAgg.yearMonth),
-          eq(ipImportUnmatched.status, "pending")
-        )
-      )
-      .limit(1);
-
-    if (existing) {
-      let merged: UnmatchedItems;
-      try {
-        merged = JSON.parse(existing.itemsJson) as UnmatchedItems;
-      } catch {
-        merged = {};
+  // 以降の書き込みは1トランザクションにまとめる。
+  // 個別コミットだとGCSマウント上のDBでは同期が数百回発生しタイムアウトする。
+  await runInTransaction(async () => {
+    for (const entry of agg.values()) {
+      const tariff = await tariffOf(entry.tenantId);
+      const usageKey = `${entry.tenantId} ${entry.yearMonth}`;
+      let usageId = usageIdCache.get(usageKey);
+      if (!usageId) {
+        usageId = await ensureIpUsage(entry.tenantId, entry.yearMonth);
+        usageIdCache.set(usageKey, usageId);
       }
-      for (const [name, item] of Object.entries(uAgg.items)) {
-        const prev = merged[name] ?? { category: item.category, seconds: 0, amount: 0 };
-        prev.seconds += item.seconds;
-        prev.amount += item.amount;
-        merged[name] = prev;
-      }
-      await db
-        .update(ipImportUnmatched)
-        .set({
-          itemsJson: JSON.stringify(merged),
-          totalSeconds: existing.totalSeconds + uAgg.totalSeconds,
-          importedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(ipImportUnmatched.id, existing.id));
-    } else {
-      await db.insert(ipImportUnmatched).values({
+
+      await db.insert(ipUsageDetails).values({
         id: randomUUID(),
-        yearMonth: uAgg.yearMonth,
-        phoneNumber: uAgg.phoneNumber,
-        itemsJson: JSON.stringify(uAgg.items),
-        totalSeconds: uAgg.totalSeconds,
-        status: "pending",
-        importedAt: now,
+        ipUsageId: usageId,
+        tenantId: entry.tenantId,
+        phoneNumber: entry.phoneNumber,
+        callCategory: entry.category,
+        callTypeName: entry.callTypeName,
+        totalSeconds: entry.totalSeconds,
+        sourceAmount: entry.sourceAmount,
+        computedAmount: computeAmount(
+          entry.category,
+          entry.totalSeconds,
+          entry.sourceAmount,
+          tariff
+        ),
+        yearMonth: entry.yearMonth,
         createdAt: now,
-        updatedAt: now,
       });
+      affected.add(usageKey);
     }
-  }
 
-  // 取込履歴（重複判定用ハッシュ）を保存
-  await db.insert(ipImportFiles).values({
-    id: randomUUID(),
-    fileName,
-    fileHash,
-    billingAccount: billingAccount || null,
-    yearMonth: fileYearMonth || null,
-    rowCount,
-    importedAt: now,
+    for (const key of affected) {
+      const [tenantId, yearMonth] = key.split(" ");
+      await recalcIpUsage(tenantId, yearMonth);
+    }
+
+    // 未紐付け番号を保存（同一番号×利用月のpending行があれば内訳を加算マージ）
+    for (const uAgg of unmatchedAggMap.values()) {
+      const [existing] = await db
+        .select()
+        .from(ipImportUnmatched)
+        .where(
+          and(
+            eq(ipImportUnmatched.phoneNumber, uAgg.phoneNumber),
+            eq(ipImportUnmatched.yearMonth, uAgg.yearMonth),
+            eq(ipImportUnmatched.status, "pending")
+          )
+        )
+        .limit(1);
+
+      if (existing) {
+        let merged: UnmatchedItems;
+        try {
+          merged = JSON.parse(existing.itemsJson) as UnmatchedItems;
+        } catch {
+          merged = {};
+        }
+        for (const [name, item] of Object.entries(uAgg.items)) {
+          const prev = merged[name] ?? { category: item.category, seconds: 0, amount: 0 };
+          prev.seconds += item.seconds;
+          prev.amount += item.amount;
+          merged[name] = prev;
+        }
+        await db
+          .update(ipImportUnmatched)
+          .set({
+            itemsJson: JSON.stringify(merged),
+            totalSeconds: existing.totalSeconds + uAgg.totalSeconds,
+            importedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(ipImportUnmatched.id, existing.id));
+      } else {
+        await db.insert(ipImportUnmatched).values({
+          id: randomUUID(),
+          yearMonth: uAgg.yearMonth,
+          phoneNumber: uAgg.phoneNumber,
+          itemsJson: JSON.stringify(uAgg.items),
+          totalSeconds: uAgg.totalSeconds,
+          status: "pending",
+          importedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    // 取込履歴（重複判定用ハッシュ）を保存
+    await db.insert(ipImportFiles).values({
+      id: randomUUID(),
+      fileName,
+      fileHash,
+      billingAccount: billingAccount || null,
+      yearMonth: fileYearMonth || null,
+      rowCount,
+      importedAt: now,
+    });
   });
 
   return {

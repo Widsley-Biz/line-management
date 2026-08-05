@@ -44,7 +44,9 @@ export async function PATCH(req: NextRequest) {
 
       const result = await assignUnmatchedToTenant(id, tenantId);
       if (!result.ok) {
-        return NextResponse.json({ error: result.error }, { status: 404 });
+        // 既に処理済み（二重送信）は409、レコード不在は404
+        const status = result.error?.includes("処理済み") ? 409 : 404;
+        return NextResponse.json({ error: result.error }, { status });
       }
 
       await logActivity({
@@ -62,7 +64,11 @@ export async function PATCH(req: NextRequest) {
   } catch (error) {
     const msg = error instanceof Error ? error.message : "不明なエラー";
     console.error("IP unmatched PATCH error:", error);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    // トランザクションでロールバック済みなので、金額は加算されていない
+    return NextResponse.json(
+      { error: `${msg}（変更は取り消されており、金額は加算されていません）` },
+      { status: 500 }
+    );
   }
 }
 

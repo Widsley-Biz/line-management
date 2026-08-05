@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatYen } from "@/lib/format";
 import { TenantCombobox } from "@/components/tenant-combobox";
+import { readJson } from "@/lib/fetch-json";
 import { AlertTriangle, CheckCircle, EyeOff, Loader2, Trash2 } from "lucide-react";
 import {
   Dialog,
@@ -101,14 +102,14 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: checkedIds }),
       });
-      if (res.ok) {
+      const result = await readJson(res);
+      if (result.ok) {
         const deletedIds = new Set(checkedIds);
         setRows((prev) => prev.filter((r) => !deletedIds.has(r.id)));
         setChecked({});
         setConfirmOpen(false);
       } else {
-        const data = await res.json();
-        setError(data.error ?? "一括削除に失敗しました");
+        setError(result.error);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "一括削除に失敗しました");
@@ -121,13 +122,18 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
     const tenantId = selected[id];
     if (!tenantId) return;
     setLoading((p) => ({ ...p, [id]: true }));
+    setError(null);
     try {
       const res = await fetch("/api/mobile/unmatched", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, action: "assign", tenantId }),
       });
-      if (res.ok) setRows((prev) => prev.filter((r) => r.id !== id));
+      const result = await readJson(res);
+      if (result.ok) setRows((prev) => prev.filter((r) => r.id !== id));
+      else setError(result.error);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "割当に失敗しました");
     } finally {
       setLoading((p) => ({ ...p, [id]: false }));
     }
@@ -135,13 +141,18 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
 
   async function handleIgnore(id: string) {
     setLoading((p) => ({ ...p, [id]: true }));
+    setError(null);
     try {
       const res = await fetch("/api/mobile/unmatched", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, action: "ignore" }),
       });
-      if (res.ok) setRows((prev) => prev.map((r) => r.id === id ? { ...r, status: "ignored" } : r));
+      const result = await readJson(res);
+      if (result.ok) setRows((prev) => prev.map((r) => r.id === id ? { ...r, status: "ignored" } : r));
+      else setError(result.error);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "更新に失敗しました");
     } finally {
       setLoading((p) => ({ ...p, [id]: false }));
     }
@@ -149,13 +160,18 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
 
   async function handleDelete(id: string) {
     setLoading((p) => ({ ...p, [id]: true }));
+    setError(null);
     try {
       const res = await fetch("/api/mobile/unmatched", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      if (res.ok) setRows((prev) => prev.filter((r) => r.id !== id));
+      const result = await readJson(res);
+      if (result.ok) setRows((prev) => prev.filter((r) => r.id !== id));
+      else setError(result.error);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "削除に失敗しました");
     } finally {
       setLoading((p) => ({ ...p, [id]: false }));
     }
@@ -316,7 +332,7 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
       </div>
 
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 whitespace-pre-wrap">
           {error}
         </div>
       )}

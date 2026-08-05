@@ -68,6 +68,15 @@ async function patchUnmatched(req: NextRequest) {
       .from(mobileImportUnmatched)
       .where(eq(mobileImportUnmatched.id, id));
     if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (row.status === "resolved") {
+      return NextResponse.json(
+        {
+          error:
+            "この未照合レコードは既に処理済みです。二重計上を防ぐため中止しました。画面を再読み込みしてください。",
+        },
+        { status: 409 }
+      );
+    }
 
     const { yearMonth, overageTotal, itemsJson, phoneNumber } = row;
     const items = JSON.parse(itemsJson) as Record<string, number>;
@@ -78,6 +87,16 @@ async function patchUnmatched(req: NextRequest) {
     // 加算・明細挿入・状態更新は1トランザクションにまとめる。
     // 途中で失敗すると金額だけ加算され、再実行で二重計上になるため。
     await runInTransaction(async () => {
+      // 処理済みかどうかはトランザクション内で再確認する（二重送信の防止）。
+      // トランザクションは直列化されるため、ここで resolved なら先の処理が完了している。
+      const [current] = await db
+        .select({ status: mobileImportUnmatched.status })
+        .from(mobileImportUnmatched)
+        .where(eq(mobileImportUnmatched.id, id));
+      if (!current || current.status === "resolved") {
+        throw new Error("この未照合レコードは既に処理済みです（二重計上を防ぐため中止しました）");
+      }
+
       // mobileUsages を upsert
       const existing = await db
         .select({ id: mobileUsages.id, overageTotal: mobileUsages.overageTotal, totalLines: mobileUsages.totalLines })

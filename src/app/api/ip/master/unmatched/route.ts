@@ -4,6 +4,7 @@ import { ipMasterUnmatched, ipNumbers } from "@/lib/db/schema";
 import { eq, ne, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
+import { runInTransaction } from "@/lib/db/tx";
 
 // GET: 未解決の番号マスタ未照合一覧を返す
 export async function GET() {
@@ -61,21 +62,24 @@ export async function PATCH(req: NextRequest) {
         );
       }
 
-      await db.insert(ipNumbers).values({
-        id: randomUUID(),
-        phoneNumber: row.phoneNumber,
-        subNumber: row.subNumber,
-        tenantId,
-        status: "契約中",
-        notes: row.notes,
-        createdAt: now,
-        updatedAt: now,
-      });
+      // 番号マスタ登録と状態更新は1トランザクションにまとめる
+      await runInTransaction(async () => {
+        await db.insert(ipNumbers).values({
+          id: randomUUID(),
+          phoneNumber: row.phoneNumber,
+          subNumber: row.subNumber,
+          tenantId,
+          status: "契約中",
+          notes: row.notes,
+          createdAt: now,
+          updatedAt: now,
+        });
 
-      await db
-        .update(ipMasterUnmatched)
-        .set({ status: "resolved", resolvedTenantId: tenantId, updatedAt: now })
-        .where(eq(ipMasterUnmatched.id, id));
+        await db
+          .update(ipMasterUnmatched)
+          .set({ status: "resolved", resolvedTenantId: tenantId, updatedAt: now })
+          .where(eq(ipMasterUnmatched.id, id));
+      });
 
       await logActivity({
         actionType: "tenant_update",

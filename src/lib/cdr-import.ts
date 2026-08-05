@@ -97,6 +97,13 @@ export async function assignUnmatchedToTenant(
     .from(ipImportUnmatched)
     .where(eq(ipImportUnmatched.id, id));
   if (!row) return { ok: false, error: "対象の未照合レコードが見つかりません" };
+  if (row.status === "resolved") {
+    return {
+      ok: false,
+      error:
+        "この未照合レコードは既に処理済みです。二重計上を防ぐため中止しました。画面を再読み込みしてください。",
+    };
+  }
 
   let items: UnmatchedItems;
   try {
@@ -106,49 +113,64 @@ export async function assignUnmatchedToTenant(
   }
 
   const now = new Date().toISOString();
+  let usageId = "";
 
-  // ハイフン・先頭0の有無を無視して既存登録の有無を確認する
-  const allNumbers = await db
-    .select({ id: ipNumbers.id, phoneNumber: ipNumbers.phoneNumber })
-    .from(ipNumbers);
-  const targetKey = phoneMatchKey(row.phoneNumber);
-  const existingNumber = allNumbers.find((n) => phoneMatchKey(n.phoneNumber) === targetKey);
-  if (!existingNumber) {
-    await db.insert(ipNumbers).values({
-      id: randomUUID(),
-      tenantId,
-      phoneNumber: row.phoneNumber,
-      status: "契約中",
-      notes: "未照合一覧から割当",
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
+  // 明細挿入・再集計・状態更新は1トランザクションにまとめる。
+  // 途中で失敗すると明細だけが残り、再実行すると同じ明細が二重に入るため。
+  await runInTransaction(async () => {
+    // 処理済みかどうかはトランザクション内で再確認する（二重送信の防止）。
+    // トランザクションは直列化されるため、ここで resolved なら先の処理が完了している。
+    const [current] = await db
+      .select({ status: ipImportUnmatched.status })
+      .from(ipImportUnmatched)
+      .where(eq(ipImportUnmatched.id, id));
+    if (!current || current.status === "resolved") {
+      throw new Error("この未照合レコードは既に処理済みです（二重計上を防ぐため中止しました）");
+    }
 
-  const tariff = await getTariffForTenant(tenantId);
-  const usageId = await ensureIpUsage(tenantId, row.yearMonth);
+    // ハイフン・先頭0の有無を無視して既存登録の有無を確認する
+    const allNumbers = await db
+      .select({ id: ipNumbers.id, phoneNumber: ipNumbers.phoneNumber })
+      .from(ipNumbers);
+    const targetKey = phoneMatchKey(row.phoneNumber);
+    const existingNumber = allNumbers.find((n) => phoneMatchKey(n.phoneNumber) === targetKey);
+    if (!existingNumber) {
+      await db.insert(ipNumbers).values({
+        id: randomUUID(),
+        tenantId,
+        phoneNumber: row.phoneNumber,
+        status: "契約中",
+        notes: "未照合一覧から割当",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
 
-  for (const [callTypeName, item] of Object.entries(items)) {
-    await db.insert(ipUsageDetails).values({
-      id: randomUUID(),
-      ipUsageId: usageId,
-      tenantId,
-      phoneNumber: row.phoneNumber,
-      callCategory: item.category,
-      callTypeName,
-      totalSeconds: item.seconds,
-      sourceAmount: item.amount,
-      computedAmount: computeAmount(item.category, item.seconds, item.amount, tariff),
-      yearMonth: row.yearMonth,
-      createdAt: now,
-    });
-  }
-  await recalcIpUsage(tenantId, row.yearMonth);
+    const tariff = await getTariffForTenant(tenantId);
+    usageId = await ensureIpUsage(tenantId, row.yearMonth);
 
-  await db
-    .update(ipImportUnmatched)
-    .set({ status: "resolved", resolvedTenantId: tenantId, updatedAt: now })
-    .where(eq(ipImportUnmatched.id, id));
+    for (const [callTypeName, item] of Object.entries(items)) {
+      await db.insert(ipUsageDetails).values({
+        id: randomUUID(),
+        ipUsageId: usageId,
+        tenantId,
+        phoneNumber: row.phoneNumber,
+        callCategory: item.category,
+        callTypeName,
+        totalSeconds: item.seconds,
+        sourceAmount: item.amount,
+        computedAmount: computeAmount(item.category, item.seconds, item.amount, tariff),
+        yearMonth: row.yearMonth,
+        createdAt: now,
+      });
+    }
+    await recalcIpUsage(tenantId, row.yearMonth);
+
+    await db
+      .update(ipImportUnmatched)
+      .set({ status: "resolved", resolvedTenantId: tenantId, updatedAt: now })
+      .where(eq(ipImportUnmatched.id, id));
+  });
 
   return { ok: true, usageId };
 }

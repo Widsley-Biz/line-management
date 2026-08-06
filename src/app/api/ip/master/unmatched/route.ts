@@ -5,6 +5,7 @@ import { eq, ne, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { runInTransaction } from "@/lib/db/tx";
+import { phoneMatchKey } from "@/lib/ip-billing";
 
 // GET: 未解決の番号マスタ未照合一覧を返す
 export async function GET() {
@@ -51,15 +52,48 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: "not found" }, { status: 404 });
       }
 
-      const [existingPhone] = await db
-        .select({ id: ipNumbers.id })
-        .from(ipNumbers)
-        .where(eq(ipNumbers.phoneNumber, row.phoneNumber));
+      // ハイフン・先頭0の有無を無視して既存登録を探す（表記違いで二重登録しないため）
+      const allNumbers = await db
+        .select({
+          id: ipNumbers.id,
+          phoneNumber: ipNumbers.phoneNumber,
+          subNumber: ipNumbers.subNumber,
+          tenantId: ipNumbers.tenantId,
+        })
+        .from(ipNumbers);
+      const targetKey = phoneMatchKey(row.phoneNumber);
+      const existingPhone = allNumbers.find(
+        (n) => phoneMatchKey(n.phoneNumber) === targetKey
+      );
+
       if (existingPhone) {
-        return NextResponse.json(
-          { error: "この電話番号は既に番号マスタに登録済みです" },
-          { status: 409 }
-        );
+        if (existingPhone.tenantId !== tenantId) {
+          return NextResponse.json(
+            {
+              error:
+                "この電話番号は既に別の取引先で番号マスタに登録済みです。番号マスタ側を確認してください。",
+            },
+            { status: 409 }
+          );
+        }
+        // 同じ取引先で登録済み（CDR未照合一覧からの割当で先に登録されたケース）。
+        // 裏番号だけ未登録なら補ったうえで、この行は処理済みにする。
+        await runInTransaction(async () => {
+          if (row.subNumber && !existingPhone.subNumber) {
+            await db
+              .update(ipNumbers)
+              .set({ subNumber: row.subNumber, updatedAt: now })
+              .where(eq(ipNumbers.id, existingPhone.id));
+          }
+          await db
+            .update(ipMasterUnmatched)
+            .set({ status: "resolved", resolvedTenantId: tenantId, updatedAt: now })
+            .where(eq(ipMasterUnmatched.id, id));
+        });
+        return NextResponse.json({
+          ok: true,
+          message: "この番号は既に同じ取引先で登録済みだったため、この行を処理済みにしました",
+        });
       }
 
       // 番号マスタ登録と状態更新は1トランザクションにまとめる

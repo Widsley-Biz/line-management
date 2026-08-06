@@ -4,9 +4,10 @@ import {
   ipNumbers,
   ipImportFiles,
   ipImportUnmatched,
+  ipMasterUnmatched,
   ipUsageDetails,
 } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { createHash, randomUUID } from "crypto";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { runInTransaction } from "@/lib/db/tx";
@@ -136,16 +137,53 @@ export async function assignUnmatchedToTenant(
       .from(ipNumbers);
     const targetKey = phoneMatchKey(row.phoneNumber);
     const existingNumber = allNumbers.find((n) => phoneMatchKey(n.phoneNumber) === targetKey);
+
+    // 番号マスタ未照合に同じ番号の行があれば、その情報を引き継いで登録する。
+    // CDRに出てくる番号は裏番号（フリーダイヤル）のこともあるため、表番号・裏番号の
+    // どちらとの一致も見る。引き継がないと裏番号が登録されず、裏番号あての通話が
+    // 次回以降も未紐付けになり請求から漏れる。
+    const masterCandidates = await db
+      .select({
+        id: ipMasterUnmatched.id,
+        phoneNumber: ipMasterUnmatched.phoneNumber,
+        subNumber: ipMasterUnmatched.subNumber,
+        notes: ipMasterUnmatched.notes,
+      })
+      .from(ipMasterUnmatched)
+      .where(ne(ipMasterUnmatched.status, "resolved"));
+    const masterRow = masterCandidates.find(
+      (m) =>
+        phoneMatchKey(m.phoneNumber) === targetKey ||
+        (m.subNumber ? phoneMatchKey(m.subNumber) === targetKey : false)
+    );
+
     if (!existingNumber) {
-      await db.insert(ipNumbers).values({
-        id: randomUUID(),
-        tenantId,
-        phoneNumber: row.phoneNumber,
-        status: "契約中",
-        notes: "未照合一覧から割当",
-        createdAt: now,
-        updatedAt: now,
-      });
+      // マスタ未照合の行があればその表番号・裏番号で登録する（CDRの番号が裏番号でも
+      // 表番号を主として登録できる）。無ければCDRの番号をそのまま表番号として登録する。
+      const alreadyRegistered =
+        masterRow &&
+        allNumbers.some((n) => phoneMatchKey(n.phoneNumber) === phoneMatchKey(masterRow.phoneNumber));
+      if (!alreadyRegistered) {
+        await db.insert(ipNumbers).values({
+          id: randomUUID(),
+          tenantId,
+          phoneNumber: masterRow?.phoneNumber ?? row.phoneNumber,
+          subNumber: masterRow?.subNumber ?? null,
+          status: "契約中",
+          notes: masterRow?.notes ?? "未照合一覧から割当",
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    // 引き継いだ番号マスタ未照合の行は処理済みにする（同じ番号の割当をもう一度
+    // 求められて「既に登録済み」エラーになるのを防ぐ）
+    if (masterRow) {
+      await db
+        .update(ipMasterUnmatched)
+        .set({ status: "resolved", resolvedTenantId: tenantId, updatedAt: now })
+        .where(eq(ipMasterUnmatched.id, masterRow.id));
     }
 
     const tariff = await getTariffForTenant(tenantId);

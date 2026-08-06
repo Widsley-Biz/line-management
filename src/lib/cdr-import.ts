@@ -11,6 +11,7 @@ import { createHash, randomUUID } from "crypto";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { runInTransaction } from "@/lib/db/tx";
 import { gunzipIfNeeded } from "@/lib/gzip";
+import { formatJstDateTime } from "@/lib/format";
 import {
   classifyCallType,
   computeAmount,
@@ -204,7 +205,7 @@ export async function importCdrFile(
     return {
       fileName,
       status: "skipped",
-      message: `同一内容のファイルが取込済みのためスキップしました（取込日時: ${dup.importedAt}）`,
+      message: `同一内容のファイルが取込済みのためスキップしました（取込日時: ${formatJstDateTime(dup.importedAt)}）`,
     };
   }
 

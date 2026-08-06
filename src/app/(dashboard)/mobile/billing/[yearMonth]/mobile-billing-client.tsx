@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatYen } from "@/lib/format";
+import { formatYen, formatJstDateTime } from "@/lib/format";
 import { Download, Plus, AlertTriangle } from "lucide-react";
 import { MobileSendSfButton } from "./send-sf-button";
 import { Textarea } from "@/components/ui/textarea";
@@ -554,7 +554,7 @@ export function MobileBillingClient({
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-400">
-                          {r.sfSentAt ? r.sfSentAt.slice(0, 16).replace("T", " ") : "—"}
+                          {formatJstDateTime(r.sfSentAt)}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,8 +53,18 @@ type CdrFileResult = {
   unknownCallTypes?: string[];
 };
 
+type ImportedFile = {
+  id: string;
+  fileName: string;
+  billingAccount: string | null;
+  yearMonth: string | null;
+  rowCount: number;
+  importedAt: string;
+};
+
 export function ImportForm() {
   const [yearMonth, setYearMonth] = useState("");
+  const [importedFiles, setImportedFiles] = useState<ImportedFile[] | null>(null);
   const [cdrFiles, setCdrFiles] = useState<File[]>([]);
   const [isCdrDragging, setIsCdrDragging] = useState(false);
   const [softBankFile, setSoftBankFile] = useState<File | null>(null);
@@ -66,6 +76,21 @@ export function ImportForm() {
   // SoftBank課金項目確認ダイアログ
   const [sbPreview, setSbPreview] = useState<SbPreview | null>(null);
   const [unknownClassifications, setUnknownClassifications] = useState<UnknownClassification[]>([]);
+
+  // 取込済みファイル一覧（同じファイルを二重に取り込まないための確認用）
+  const loadImportedFiles = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ip/import-files");
+      const result = await readJson<ImportedFile[]>(res);
+      if (result.ok) setImportedFiles(result.data);
+    } catch {
+      // 一覧の取得失敗は取込作業を妨げないため、画面上は無視する
+    }
+  }, []);
+
+  useEffect(() => {
+    loadImportedFiles();
+  }, [loadImportedFiles]);
 
   const addCdrFiles = (files: File[]) => {
     if (files.length === 0) return;
@@ -166,6 +191,7 @@ export function ImportForm() {
           setCdrResults(result.data.results ?? []);
           setCdrFiles([]);
         }
+        await loadImportedFiles();
       }
 
       // SoftBank（携帯回線）
@@ -540,6 +566,61 @@ export function ImportForm() {
           </CardContent>
         </Card>
       )}
+
+      {/* 取込済みCDRファイル一覧（二重取込の防止用） */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <FileText className="h-4 w-4 text-gray-500" />
+            取込済みのCDRファイル
+            {importedFiles && (
+              <Badge variant="secondary" className="text-xs">{importedFiles.length}件</Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-gray-500 mb-3">
+            ※ まったく同じ内容のファイルは自動でスキップされますが、分割したファイルは別ファイル扱いになります。
+            分割前のファイルと分割後のファイルを両方取り込むと二重に加算されるため、ここで取込済みか確認してください。
+          </p>
+          {importedFiles === null ? (
+            <p className="text-xs text-gray-400">読み込み中...</p>
+          ) : importedFiles.length === 0 ? (
+            <p className="text-xs text-gray-400">まだ取り込まれたファイルはありません</p>
+          ) : (
+            <div className="max-h-72 overflow-y-auto rounded-lg border">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr className="border-b">
+                    <th className="text-left px-3 py-2 font-medium text-gray-600">ファイル名</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-600">請求アカウント</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-600">利用年月</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-600">明細行数</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-600">取込日時</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importedFiles.map((f) => (
+                    <tr key={f.id} className="border-b last:border-0 hover:bg-gray-50">
+                      <td className="px-3 py-2 font-mono text-gray-800">{f.fileName}</td>
+                      <td className="px-3 py-2 text-gray-600">{f.billingAccount ?? "—"}</td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {f.yearMonth ? `${f.yearMonth.split("-")[0]}年${Number(f.yearMonth.split("-")[1])}月` : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-gray-600">
+                        {f.rowCount.toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500">
+                        {f.importedAt.replace("T", " ").slice(0, 16)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div>
         <Button onClick={handleImport} disabled={loading}>

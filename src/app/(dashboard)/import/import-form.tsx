@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Upload, FileText, Loader2, Smartphone, CheckCircle2, AlertTriangle, X, Network } from "lucide-react";
-import { formatJapanesePhoneNumber } from "@/lib/format";
+import { formatJapanesePhoneNumber, formatJstDateTime } from "@/lib/format";
 import { readJson } from "@/lib/fetch-json";
 import {
   Dialog,
@@ -634,7 +634,7 @@ export function ImportForm() {
                         {f.rowCount.toLocaleString()}
                       </td>
                       <td className="px-3 py-2 text-gray-500">
-                        {f.importedAt.replace("T", " ").slice(0, 16)}
+                        {formatJstDateTime(f.importedAt)}
                       </td>
                     </tr>
                   ))}

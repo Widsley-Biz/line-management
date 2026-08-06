@@ -7,6 +7,28 @@ export function formatYen(amount: number): string {
   }).format(amount);
 }
 
+/**
+ * ISO日時文字列を日本時間の「YYYY/MM/DD HH:mm」で表示する。
+ *
+ * DBには末尾Zで保存されているUTC（取込日時・SF送信日時など）と、
+ * +09:00付きで保存されている日本時間（監査ログ）が混在している。
+ * どちらもタイムゾーン情報を持つため、日本時間に変換して表示すれば揃う。
+ */
+export function formatJstDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+}
+
 /** 秒数を hh:mm:ss 形式に変換 */
 export function formatSeconds(sec: number): string {
   const h = Math.floor(sec / 3600);

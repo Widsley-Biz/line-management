@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatYen } from "@/lib/format";
+import { formatYen, formatJstDateTime } from "@/lib/format";
 import { Download } from "lucide-react";
 import { IpSendSfButton } from "./send-sf-button";
 
@@ -232,7 +232,7 @@ export function IpBillingClient({
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-400">
-                          {r.sfSentAt ? r.sfSentAt.slice(0, 16).replace("T", " ") : "—"}
+                          {formatJstDateTime(r.sfSentAt)}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">

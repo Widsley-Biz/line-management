@@ -10,6 +10,7 @@ import { and, eq } from "drizzle-orm";
 import { createHash, randomUUID } from "crypto";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { runInTransaction } from "@/lib/db/tx";
+import { gunzipIfNeeded } from "@/lib/gzip";
 import {
   classifyCallType,
   computeAmount,
@@ -184,8 +185,13 @@ export async function importCdrFile(
   buffer: ArrayBuffer,
   fileName: string
 ): Promise<CdrFileResult> {
+  // 画面側で圧縮されている場合は展開する。
+  // ハッシュは展開後の内容で計算するため、圧縮の有無にかかわらず
+  // 同一ファイルは重複としてスキップされる。
+  const content = gunzipIfNeeded(buffer);
+
   const fileHash = createHash("sha256")
-    .update(Buffer.from(buffer))
+    .update(Buffer.from(content))
     .digest("hex");
 
   // まったく同じファイルはスキップ（ハッシュ一致）
@@ -202,7 +208,7 @@ export async function importCdrFile(
     };
   }
 
-  const text = decodeCdrBuffer(buffer);
+  const text = decodeCdrBuffer(content);
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) {
     return { fileName, status: "error", message: "データ行がありません" };

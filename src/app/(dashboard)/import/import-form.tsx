@@ -53,6 +53,28 @@ type CdrFileResult = {
   unknownCallTypes?: string[];
 };
 
+// Cloud Runのリクエストサイズ上限は32MiB。これを超えるファイルはアプリに届く前に
+// 413で弾かれるため、大きいファイルは送信前にgzip圧縮する（CSVは実測で約1/11になる）。
+// サーバー側は先頭バイトでgzipを判定して展開するので、ファイル名はそのまま送る。
+const COMPRESS_THRESHOLD_BYTES = 8 * 1024 * 1024;
+
+async function compressIfLarge(file: File): Promise<File> {
+  if (
+    file.size < COMPRESS_THRESHOLD_BYTES ||
+    typeof CompressionStream === "undefined"
+  ) {
+    return file;
+  }
+  try {
+    const stream = file.stream().pipeThrough(new CompressionStream("gzip"));
+    const blob = await new Response(stream).blob();
+    return new File([blob], file.name, { type: "application/gzip" });
+  } catch {
+    // 圧縮に失敗した場合は元のファイルをそのまま送る
+    return file;
+  }
+}
+
 type ImportedFile = {
   id: string;
   fileName: string;
@@ -144,7 +166,7 @@ export function ImportForm() {
       try {
         const fd = new FormData();
         fd.append("yearMonth", yearMonth);
-        fd.append("softBank", softBankFile);
+        fd.append("softBank", await compressIfLarge(softBankFile));
         fd.append("previewOnly", "true");
 
         const res = await fetch("/api/billing/import", { method: "POST", body: fd });
@@ -182,7 +204,7 @@ export function ImportForm() {
       // CDR CSV（IP回線）
       if (cdrFiles.length > 0) {
         const fd = new FormData();
-        for (const f of cdrFiles) fd.append("files", f);
+        for (const f of cdrFiles) fd.append("files", await compressIfLarge(f));
         const res = await fetch("/api/ip/import", { method: "POST", body: fd });
         const result = await readJson<{ results?: CdrFileResult[] }>(res);
         if (!result.ok) {
@@ -198,7 +220,7 @@ export function ImportForm() {
       if (softBankFile) {
         const fd = new FormData();
         fd.append("yearMonth", yearMonth);
-        fd.append("softBank", softBankFile);
+        fd.append("softBank", await compressIfLarge(softBankFile));
         const res = await fetch("/api/billing/import", { method: "POST", body: fd });
         const result = await readJson<{ softBank?: SoftBankImportResult }>(res);
         if (!result.ok) {
@@ -580,8 +602,9 @@ export function ImportForm() {
         </CardHeader>
         <CardContent>
           <p className="text-xs text-gray-500 mb-3">
-            ※ まったく同じ内容のファイルは自動でスキップされますが、分割したファイルは別ファイル扱いになります。
-            分割前のファイルと分割後のファイルを両方取り込むと二重に加算されるため、ここで取込済みか確認してください。
+            ※ まったく同じ内容のファイルは自動でスキップされます。ただし手動で分割したファイルは
+            別ファイル扱いになり、分割前と分割後を両方取り込むと二重に加算されます。取込済みかどうかはここで確認してください。
+            大きいファイルは自動で圧縮して送信されるため、分割は不要です。
           </p>
           {importedFiles === null ? (
             <p className="text-xs text-gray-400">読み込み中...</p>

@@ -12,6 +12,7 @@ import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { runInTransaction } from "@/lib/db/tx";
+import { gunzipIfNeeded } from "@/lib/gzip";
 
 interface ImportResult {
   success: number;
@@ -440,7 +441,8 @@ export async function POST(req: NextRequest) {
     const result: Record<string, ImportResult> = {};
 
     if (softBankFile) {
-      const buffer = await softBankFile.arrayBuffer();
+      // 画面側で圧縮されている場合は展開する（Cloud Runのリクエスト上限32MiB対策）
+      const buffer = gunzipIfNeeded(await softBankFile.arrayBuffer());
       const isCSV = softBankFile.name.toLowerCase().endsWith(".csv");
       const previewOnly = formData.get("previewOnly") === "true";
       result.softBank = await importSoftBank(buffer, yearMonth, isCSV, { previewOnly });

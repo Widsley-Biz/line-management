@@ -5,8 +5,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calculator, Plus, Pencil, RotateCcw } from "lucide-react";
+import { Calculator, Plus, Pencil, RotateCcw, Loader2, AlertTriangle } from "lucide-react";
 import { TenantCombobox } from "@/components/tenant-combobox";
+import { readJson } from "@/lib/fetch-json";
+import { formatYen } from "@/lib/format";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+/** タリフ保存時に、その取引先で未送信の請求データがあった場合に返る情報 */
+type PendingRecalc = {
+  tenantId: string;
+  tenantName: string;
+  count: number;
+  yearMonths: string[];
+  currentTotal: number;
+};
 
 type Rates = {
   fixedRate: number;
@@ -70,6 +88,8 @@ export function IpTariffsClient({
   const [newTenantId, setNewTenantId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingRecalc, setPendingRecalc] = useState<PendingRecalc | null>(null);
+  const [isRecalculating, setIsRecalculating] = useState(false);
 
   // 上書き未設定の取引先のみ新規追加候補にする
   const overriddenIds = new Set(overrides.map((o) => o.tenantId));
@@ -100,13 +120,43 @@ export function IpTariffsClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      const data = await res.json();
-      setError(data.error ?? "保存に失敗しました");
+    const result = await readJson<{ pendingRecalc: PendingRecalc | null }>(res);
+    if (!result.ok) {
+      setError(result.error);
+      setIsSubmitting(false);
+      return;
+    }
+    // 未送信の請求データがある場合は、再計算するかを確認してから画面を更新する。
+    // 金額は取込時のタリフで確定して保存されているため、再計算しないと反映されない。
+    if (result.data.pendingRecalc) {
+      setPendingRecalc(result.data.pendingRecalc);
       setIsSubmitting(false);
       return;
     }
     window.location.reload();
+  }
+
+  async function handleRecalc() {
+    if (!pendingRecalc) return;
+    setIsRecalculating(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/ip/tariffs/recalc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId: pendingRecalc.tenantId }),
+      });
+      const result = await readJson(res);
+      if (!result.ok) {
+        setError(result.error);
+        setIsRecalculating(false);
+        return;
+      }
+      window.location.reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "再計算に失敗しました");
+      setIsRecalculating(false);
+    }
   }
 
   async function handleRemoveOverride(tenantId: string, companyName: string) {
@@ -122,6 +172,67 @@ export function IpTariffsClient({
   return (
     <div className="space-y-6">
       <div>
+        {/* タリフ保存後、未送信の請求データがある場合の再計算確認 */}
+        <Dialog
+          open={!!pendingRecalc}
+          onOpenChange={(o) => {
+            // 「いいえ」＝再計算しない。タリフの保存自体は済んでいるので画面は更新する
+            if (!o && !isRecalculating) window.location.reload();
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                未送信の請求データがあります
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3 text-sm">
+              <p>
+                <span className="font-bold">{pendingRecalc?.tenantName}</span>{" "}
+                で未送信の請求データがあります。上書きしたタリフで再計算しますか？
+              </p>
+              <div className="rounded-lg border p-3 space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">対象件数</span>
+                  <span className="font-medium">{pendingRecalc?.count} 件</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">対象の利用年月</span>
+                  <span className="font-medium">
+                    {pendingRecalc?.yearMonths
+                      .map((ym) => `${ym.split("-")[0]}年${Number(ym.split("-")[1])}月`)
+                      .join("、")}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">現在の請求金額</span>
+                  <span className="font-medium">{formatYen(pendingRecalc?.currentTotal ?? 0)}</span>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                金額は取込時のタリフで計算して保存されているため、再計算しないと新しいタリフは反映されません。
+                SF送信済みのデータは金額が変わると不整合になるため対象外です。
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => window.location.reload()}
+                disabled={isRecalculating}
+              >
+                いいえ（再計算しない）
+              </Button>
+              <Button onClick={handleRecalc} disabled={isRecalculating}>
+                {isRecalculating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                はい（再計算する）
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <h1 className="text-2xl font-bold text-gray-900">タリフ設定</h1>
         <p className="text-sm text-gray-500 mt-1">
           通話種別4パターンの単価を管理します（取引先別の上書きが優先されます）

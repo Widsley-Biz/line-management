@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { ipTariffs } from "@/lib/db/schema";
-import { eq, isNull } from "drizzle-orm";
+import { ipTariffs, ipUsages, tenants } from "@/lib/db/schema";
+import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { DEFAULT_TARIFF } from "@/lib/ip-billing";
@@ -95,7 +95,37 @@ export async function POST(req: NextRequest) {
       targetId: tenantId,
       afterJson: { tenantId, ...rates },
     });
-    return NextResponse.json({ success: true });
+
+    // 金額は取込時のタリフで計算して保存しているため、タリフを変えても既存の
+    // 請求データは変わらない。未送信の請求データがあれば再計算するか確認できるよう、
+    // 対象の件数と利用月を返す（SF送信済みは金額が変わると不整合になるため対象外）。
+    const pending = await db
+      .select({
+        yearMonth: ipUsages.yearMonth,
+        totalAmount: ipUsages.totalAmount,
+      })
+      .from(ipUsages)
+      .where(
+        and(eq(ipUsages.tenantId, tenantId), eq(ipUsages.sfStatus, "未送信"))
+      );
+    const [tenant] = await db
+      .select({ companyName: tenants.companyName })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId));
+
+    return NextResponse.json({
+      success: true,
+      pendingRecalc:
+        pending.length > 0
+          ? {
+              tenantId,
+              tenantName: tenant?.companyName ?? "",
+              count: pending.length,
+              yearMonths: pending.map((p) => p.yearMonth).sort(),
+              currentTotal: pending.reduce((s, p) => s + p.totalAmount, 0),
+            }
+          : null,
+    });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "不明なエラー";
     console.error("IP tariffs POST error:", error);

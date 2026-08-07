@@ -228,8 +228,10 @@ export async function ensureIpUsage(
 }
 
 /**
- * IP回線の請求月（利用月+1ヶ月）の開始日・終了日。
- * 携帯回線（+2ヶ月）とはルールが異なる点に注意。
+ * IP回線の請求月（利用月+2ヶ月）の開始日・終了日。
+ *
+ * 当初はCDRのC列（請求月＝利用月+1ヶ月）に合わせて+1ヶ月としていたが、
+ * 2026年8月に「携帯回線と同じ利用月+2ヶ月」へ運用ルールが変更された。
  */
 export function getIpBillingPeriod(yearMonth: string): {
   billingMonth: string;
@@ -237,7 +239,7 @@ export function getIpBillingPeriod(yearMonth: string): {
   endDate: string;
 } {
   const [year, month] = yearMonth.split("-").map(Number);
-  const billingDate = new Date(year, month - 1 + 1, 1);
+  const billingDate = new Date(year, month - 1 + 2, 1);
   const by = billingDate.getFullYear();
   const bm = billingDate.getMonth() + 1;
   const billingYM = `${by}-${String(bm).padStart(2, "0")}`;

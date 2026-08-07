@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatYen, formatJstDateTime } from "@/lib/format";
+import { readJson } from "@/lib/fetch-json";
 import { Download } from "lucide-react";
 import { IpSendSfButton } from "./send-sf-button";
 
@@ -44,6 +45,41 @@ export function IpBillingClient({
   const [statusFilter, setStatusFilter] = useState("");
   const [bulkSending, setBulkSending] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
+  const [recalculating, setRecalculating] = useState(false);
+
+  // 保存済みの明細から未送信の請求金額を集計し直す（端数処理のルール変更を反映する用途）
+  async function handleRecalc() {
+    if (
+      !confirm(
+        `${yearMonth}の未送信の請求データを、保存済みの明細から集計し直します。\n単価（タリフ）は変更されません。SF送信済みのデータは対象外です。\n実行しますか？`
+      )
+    ) {
+      return;
+    }
+    setRecalculating(true);
+    setBulkError(null);
+    try {
+      const res = await fetch("/api/ip/billing/recalc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ yearMonth }),
+      });
+      const result = await readJson<{ updated: number; changed: number; diff: number }>(res);
+      if (!result.ok) {
+        setBulkError(result.error);
+        setRecalculating(false);
+        return;
+      }
+      const { updated, changed, diff } = result.data;
+      alert(
+        `再集計しました。\n対象 ${updated}件 / 金額が変わった取引先 ${changed}社 / 差額合計 ${diff >= 0 ? "+" : ""}${diff.toLocaleString()}円`
+      );
+      window.location.reload();
+    } catch (e) {
+      setBulkError(e instanceof Error ? e.message : "再集計に失敗しました");
+      setRecalculating(false);
+    }
+  }
 
   const pendingRows = rows.filter((r) => r.sfStatus === "未送信" || r.sfStatus === "エラー");
   const pendingIds = pendingRows.map((r) => r.id);
@@ -146,6 +182,18 @@ export function IpBillingClient({
               <Download className="h-4 w-4" />
               全社CSV
             </a>
+
+            {pendingCount > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleRecalc}
+                disabled={recalculating || bulkSending}
+                title="保存済みの明細から未送信の請求金額を集計し直します（単価は変更しません）"
+              >
+                {recalculating ? "再集計中..." : "未送信を再集計"}
+              </Button>
+            )}
 
             {checkedIds.length > 0 && (
               <Button

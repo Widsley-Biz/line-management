@@ -150,15 +150,20 @@ export async function recalcIpUsage(
       )
     );
 
+  // 端数処理は「固定」「携帯」「ナビ（秒課金・金額課金）」の3区分でそれぞれ切り上げる。
+  // SF商品は2つ（①固定分 / ②携帯＋ナビ分）だが、携帯とナビは別々に切り上げてから
+  // 合算するのが実際の請求ルール。
   let fixedRaw = 0;
-  let mobileNaviRaw = 0;
+  let mobileRaw = 0;
+  let naviRaw = 0;
   for (const d of details) {
     if (d.callCategory === "固定") fixedRaw += d.computedAmount;
-    else mobileNaviRaw += d.computedAmount; // 携帯＋ナビ秒＋ナビ金額は合算
+    else if (d.callCategory === "携帯") mobileRaw += d.computedAmount;
+    else naviRaw += d.computedAmount; // ナビ秒課金・ナビ金額課金
   }
 
   const fixedAmount = Math.ceil(fixedRaw);
-  const mobileNaviAmount = Math.ceil(mobileNaviRaw);
+  const mobileNaviAmount = Math.ceil(mobileRaw) + Math.ceil(naviRaw);
   const totalAmount = fixedAmount + mobileNaviAmount;
   const now = new Date().toISOString();
 

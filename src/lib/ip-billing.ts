@@ -122,9 +122,13 @@ export function computeAmount(
     case "携帯":
       return totalSeconds * tariff.mobileRate;
     case "ナビ秒":
-      return totalSeconds * tariff.naviSecRate;
     case "ナビ金額":
-      return sourceAmount * tariff.naviAmountRate;
+      // ナビダイヤルは基本が金額課金（通話料金 × 倍率）。
+      // タリフに秒課金の単価が設定されている場合のみ秒課金で計算する。
+      // （ナビ秒課金とナビ金額課金は同時に設定できないため、どちらか一方が必ず0）
+      return tariff.naviSecRate > 0
+        ? totalSeconds * tariff.naviSecRate
+        : sourceAmount * tariff.naviAmountRate;
   }
 }
 

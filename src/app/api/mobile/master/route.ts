@@ -4,11 +4,12 @@ import { mobileLines } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
+import { phoneMatchKey } from "@/lib/phone";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { phoneNumber, tenantId, status, contractStart, contractEnd, notes } = body;
+    const { phoneNumber, tenantId, status, contractStart, contractEnd, deviceReturned, notes } = body;
 
     if (!phoneNumber || !tenantId) {
       return NextResponse.json({ error: "電話番号と取引先IDは必須です" }, { status: 400 });
@@ -20,10 +21,13 @@ export async function POST(req: NextRequest) {
     await db.insert(mobileLines).values({
       id,
       phoneNumber,
+      // コンシェル同期の突合キー。ここを入れ忘れると差分照合から漏れる
+      phoneKey: phoneMatchKey(phoneNumber),
       tenantId,
       status: status ?? "契約中",
       contractStart: contractStart || null,
       contractEnd: contractEnd || null,
+      deviceReturned: deviceReturned ?? 0,
       notes: notes || null,
       createdAt: now,
       updatedAt: now,
@@ -47,7 +51,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, phoneNumber, tenantId, status, contractStart, contractEnd, notes } = body;
+    const { id, phoneNumber, tenantId, status, contractStart, contractEnd, deviceReturned, notes } = body;
 
     if (!id) {
       return NextResponse.json({ error: "IDは必須です" }, { status: 400 });
@@ -57,10 +61,12 @@ export async function PUT(req: NextRequest) {
 
     await db.update(mobileLines).set({
       phoneNumber,
+      phoneKey: phoneMatchKey(phoneNumber),
       tenantId,
       status,
       contractStart: contractStart || null,
       contractEnd: contractEnd || null,
+      deviceReturned: deviceReturned ?? 0,
       notes: notes || null,
       updatedAt: now,
     }).where(eq(mobileLines.id, id));

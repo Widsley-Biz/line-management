@@ -68,8 +68,17 @@ GitHub (main) --push--> Cloud Build (自動トリガー) --> Artifact Registry
 
 ## 4. データベース (SQLite)
 
-本番イメージ (standalone) は tsx / ソースを含まないためマイグレーションを実行できません。
-そのため **Cloud Shell でローカルに migrate + seed したうえで lime.db をバケットへアップロード** しました。
+> **【2026-09 更新】本番のマイグレーションはコンテナ起動時に自動適用されます。**
+> `Dockerfile` の CMD が `scripts/migrate-on-start.mjs` を実行し、`drizzle/migrations/*.sql` を
+> better-sqlite3 だけで適用します（standalone に tsx が無いため drizzle-kit は使いません）。
+> したがって **ADD COLUMN / CREATE TABLE などの追加型マイグレーションは main へ push するだけで反映されます。**
+> 注意点:
+> - `drizzle/migrations/meta/_journal.json` の `when` は既存の最大値より大きくすること
+>   （未適用判定が `when <= 適用済みの最大値` のため、小さいと無視される）
+> - 握りつぶすのは `duplicate column name` / `already exists` のみ。**DROP や型変更は流さないこと**
+> - 適用前に `gcloud storage cp gs://widsley-dx-linehub-data/lime.db ./lime.db.$(date +%Y%m%d)` でバックアップを取る
+
+初期構築時は **Cloud Shell でローカルに migrate + seed したうえで lime.db をバケットへアップロード** しました。
 
 ```bash
 git clone https://github.com/Widsley-Biz/line-management.git
@@ -134,7 +143,9 @@ git push origin main
 - **最大インスタンス数は必ず 1 のまま**にすること (SQLite 単一ライター制約)。スケールアウトすると DB が壊れる。
 - DB は `/data/lime.db` (GCS-FUSE)。FUSE は同時書き込みに弱いため、上記インスタンス制約が前提。
 - ジャーナルモードは `DELETE` 固定 (WAL は GCS-FUSE 非対応)。
-- 本番イメージではマイグレーション不可。スキーマ変更時は Cloud Shell で migrate → lime.db を再アップロード、もしくは別途マイグレーション手段を用意する。
+- マイグレーションはコンテナ起動時に自動適用される（`scripts/migrate-on-start.mjs`）。追加型のSQLのみ安全。詳細は §4 を参照。
+- SB法人コンシェル同期の環境変数と運用は `docs/CONCIERGE_SYNC.md` を参照。
+  **コンシェルのID/パスワードは本体サービスに設定せず、Cloud Run Job 側にのみ置くこと。**
 
 
 ---

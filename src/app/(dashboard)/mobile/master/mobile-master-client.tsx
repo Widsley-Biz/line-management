@@ -14,6 +14,9 @@ type MobileLine = {
   contractStart: string | null;
   contractEnd: string | null;
   deviceReturned: number;
+  imei: string | null;
+  iccid: string | null;
+  conciergeStatus: string;
   notes: string | null;
   tenantId: string;
   companyName: string;
@@ -337,6 +340,8 @@ export function MobileMasterClient({ lines, tenants }: Props) {
                   <th className="text-left py-2 pr-4">ステータス</th>
                   <th className="text-left py-2 pr-4">契約開始日</th>
                   <th className="text-left py-2 pr-4">解約日</th>
+                  <th className="text-left py-2 pr-4">IMEI</th>
+                  <th className="text-left py-2 pr-4">ICCID</th>
                   <th className="text-left py-2 pr-4">端末回収</th>
                   <th className="text-left py-2 pr-4">備考</th>
                   <th className="text-left py-2">操作</th>
@@ -345,7 +350,7 @@ export function MobileMasterClient({ lines, tenants }: Props) {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8 text-gray-400">
+                    <td colSpan={10} className="text-center py-8 text-gray-400">
                       <Smartphone className="h-8 w-8 mx-auto mb-2 opacity-30" />
                       データがありません
                     </td>
@@ -364,6 +369,12 @@ export function MobileMasterClient({ lines, tenants }: Props) {
                       </td>
                       <td className="py-2 pr-4 text-gray-500">{line.contractStart ?? "-"}</td>
                       <td className="py-2 pr-4 text-gray-500">{line.contractEnd ?? "-"}</td>
+                      <td className="py-2 pr-4 font-mono text-xs text-gray-500">
+                        {line.imei ?? "-"}
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-xs text-gray-500">
+                        {line.iccid ?? "-"}
+                      </td>
                       <td className="py-2 pr-4">
                         <DeviceReturnedBadge value={line.deviceReturned} />
                       </td>

@@ -50,12 +50,22 @@ tenants (テナント)
   ├── ip_tariffs (タリフ設定：tenant_id NULL = デフォルト)
   ├── ip_usages (IP月次通話料：固定分・携帯＋ナビ分・合計)
   │     └── ip_usage_details (番号×通話種別の内訳)
-  └── mobile_lines (携帯回線マスタ)
+  └── mobile_lines (携帯回線マスタ：IMEI・ICCID・コンシェル同期状態を保持)
         └── mobile_usages (携帯月次使用量)
               └── mobile_usage_details (超過項目別明細)
 
 ip_import_files (CDR取込履歴・ファイルハッシュによる重複判定)
+
+SB法人コンシェル同期
+  concierge_sync_runs  (同期の実行履歴。失敗も必ず残す)
+  concierge_lines      (SB側の現状ミラー：電話番号ごとに1行)
+  concierge_diffs      (差分の提案→承認→反映。削除しない＝変更記録の本体)
+  notifications        (アプリ内お知らせ)
 ```
+
+コンシェル同期は **承認するまで `mobile_lines`（台帳）を変更しない**。
+同期処理は `concierge_lines` / `concierge_diffs` にしか書き込まず、台帳を更新できるのは
+承認API（`/api/concierge/diffs`）だけ。詳細は `docs/CONCIERGE_SYNC.md`。
 
 ※ 旧IP回線構造（`billing_accounts` / `channel_groups` / `phone_numbers` / `tenant_assignments`）は初期データ移行（Phase E）完了後に削除予定。`TASK.md` 参照。
 
@@ -73,17 +83,19 @@ ip_import_files (CDR取込履歴・ファイルハッシュによる重複判定
 | `/tenants` | 取引先一覧・詳細（CSV一括登録対応） |
 | `/import` | CSV/Excelインポート（CDR＝IP回線・SoftBank＝携帯回線）※SoftBank取込時に課金項目確認ダイアログ表示 |
 | `/activity` | 更新履歴 |
+| `/notifications` | お知らせ（同期結果・要対応事象。Slack通知の送信可否も記録） |
 | `/settings` | ユーザー管理・SF接続設定の確認 |
 | `/ip/master` | IP回線マスタ（表番号・裏番号、CSV一括登録） |
 | `/ip/billing/[yearMonth]` | IP回線 月次請求管理（固定分・携帯＋ナビ分、一括/選択/個別SF送信、CSVエクスポート） |
 | `/ip/numbers` | 契約番号一覧（番号・裏番号・通話種別内訳、CSVエクスポート） |
 | `/ip/tariffs` | タリフ設定（デフォルト4種の編集・取引先別上書き） |
-| `/mobile/master` | 携帯回線マスタ（CSV一括登録・端末回収管理） |
+| `/mobile/master` | 携帯回線マスタ（CSV一括登録・端末回収管理・IMEI/ICCID表示） |
 | `/mobile/billing/[yearMonth]` | 携帯回線 月次請求管理 |
 | `/mobile/devices` | 契約端末一覧（契約期間・端末回収フィルター） |
 | `/mobile/billing-items` | 課金項目マスタ（課金/非課金管理・CSVから一括取込） |
 | `/mobile/sf-pending` | SF未送信一覧（全月横断・キーワード絞込・一括「対応不要」） |
 | `/mobile/unmatched` | SoftBank取込 未照合一覧（取引先への紐付け・無視） |
+| `/mobile/concierge` | コンシェル同期（SB側との差分を承認して台帳へ反映。会社名ごとの一括割当） |
 
 ## npm scripts
 

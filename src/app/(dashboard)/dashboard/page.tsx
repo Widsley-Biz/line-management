@@ -7,11 +7,13 @@ import {
   users,
   mobileLines,
   mobileUsages,
+  conciergeDiffs,
+  conciergeSyncRuns,
 } from "@/lib/db/schema";
 import { eq, count, desc, sql } from "drizzle-orm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
-import { Users, Clock, History, ArrowRight } from "lucide-react";
+import { Users, Clock, History, ArrowRight, RefreshCw, AlertTriangle } from "lucide-react";
 import { DashboardTabs } from "./dashboard-tabs";
 
 function currentYearMonth() {
@@ -135,6 +137,29 @@ export default async function DashboardPage() {
   const totalIpNumbers = ipNumbersPerTenant.reduce((s, r) => s + r.totalNumbers, 0);
   const totalMobileLines = mobileLinesPerTenant.reduce((s, r) => s + r.totalLines, 0);
 
+  // コンシェル同期の状態。
+  // 「無通知＝成功」にしないため、最後に成功してからの経過時間を常に見せる。
+  const [pendingDiffs, lastSyncRows] = await Promise.all([
+    db
+      .select({ n: count() })
+      .from(conciergeDiffs)
+      .where(eq(conciergeDiffs.status, "pending")),
+    db
+      .select()
+      .from(conciergeSyncRuns)
+      .orderBy(desc(conciergeSyncRuns.queuedAt))
+      .limit(1),
+  ]);
+  const lastSync = lastSyncRows[0] ?? null;
+  const lastSyncAt = lastSync?.finishedAt ?? lastSync?.queuedAt ?? null;
+  const hoursSinceSync = lastSyncAt
+    ? (Date.now() - new Date(lastSyncAt).getTime()) / 3600000
+    : null;
+  // 毎朝8時に動く前提なので、36時間成功がなければ異常とみなす
+  const syncStale =
+    lastSync === null || hoursSinceSync === null || hoursSinceSync > 36 ||
+    lastSync.status === "failed" || lastSync.status === "timeout";
+
   return (
     <div className="space-y-8">
       <div>
@@ -143,6 +168,46 @@ export default async function DashboardPage() {
           {ym.replace("-", "年")}月の請求管理状況
         </p>
       </div>
+
+      {/* コンシェル同期の状態 */}
+      <Card className={syncStale ? "border-red-300 bg-red-50" : undefined}>
+        <CardContent className="py-4 flex flex-wrap items-center gap-x-8 gap-y-2 text-sm">
+          <span className="flex items-center gap-2 font-medium">
+            {syncStale ? (
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+            ) : (
+              <RefreshCw className="h-4 w-4 text-gray-500" />
+            )}
+            コンシェル同期
+          </span>
+          <span>
+            <span className="text-gray-500">最終実行</span>{" "}
+            {lastSyncAt ? (
+              <span className={syncStale ? "text-red-700 font-semibold" : "font-semibold"}>
+                {relativeTime(lastSyncAt)}
+                {lastSync && lastSync.status !== "succeeded" && `（${lastSync.status}）`}
+              </span>
+            ) : (
+              <span className="text-red-700 font-semibold">未実行</span>
+            )}
+          </span>
+          <span>
+            <span className="text-gray-500">未承認の差分</span>{" "}
+            <span className="font-semibold">
+              {(pendingDiffs[0]?.n ?? 0).toLocaleString()}件
+            </span>
+          </span>
+          {lastSync?.errorMessage && (
+            <span className="text-red-700">{lastSync.errorMessage}</span>
+          )}
+          <Link
+            href="/mobile/concierge"
+            className="ml-auto text-blue-600 hover:underline flex items-center gap-1"
+          >
+            差分を確認 <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </CardContent>
+      </Card>
 
       {/* 上部カード：有効取引先 + SF送信待ち合計のみ */}
       <div className="grid grid-cols-2 gap-4">

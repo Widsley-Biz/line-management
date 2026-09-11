@@ -85,6 +85,13 @@
       "when": 1783800000000,
       "tag": "0011_navi_sec_rate_default_zero",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1783900000000,
+      "tag": "0012_concierge_sync",
+      "breakpoints": true
     }
   ]
 }

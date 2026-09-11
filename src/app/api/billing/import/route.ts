@@ -13,6 +13,11 @@ import { logActivity } from "@/lib/audit";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { runInTransaction } from "@/lib/db/tx";
 import { gunzipIfNeeded } from "@/lib/gzip";
+import { parseSoftBankMetaRows } from "@/lib/concierge/diff";
+import { ingestObservedLines, type IngestSummary } from "@/lib/concierge/ingest";
+import { createRun, finishRun, markRunning } from "@/lib/concierge/runs";
+import { notify } from "@/lib/notify";
+import { DIFF_TYPE_LABELS } from "@/lib/concierge/labels";
 
 interface ImportResult {
   success: number;
@@ -202,6 +207,12 @@ async function importSoftBank(
     };
   }
 
+  // 回線メタデータ（電話番号 / ICCID / 製造番号（IMEI）/ 氏名 / 部署 / 料金プラン）を拾う。
+  // これらは課金項目ではないため集計からは除外されるが、回線マスタの元データになる。
+  // ※ 請求ファイルは「その請求月の断面」であり全回線の一覧ではない。
+  //    そのため detectRemovals は false（CSVに無い＝解約、とは言えない）。
+  const meta = parseSoftBankMetaRows(headerRow, dataRows, billingStartIdx);
+
   // データ行を処理
   const tenantOverage = new Map<string, number>();
   const tenantLines = new Map<string, Set<string>>();
@@ -269,9 +280,15 @@ async function importSoftBank(
   const now = new Date().toISOString();
   let success = 0;
 
+  // 回線同期の実行履歴。処理を始める前に作る（失敗しても記録が残るように）
+  const syncRun = await createRun({ runType: "billing_csv", trigger: "import" });
+  await markRunning(syncRun.id, "請求ファイルから回線情報を取り込み中");
+
   // 以降の書き込みは1トランザクションにまとめる。
   // 個別コミットだとGCSマウント上のDBでは同期が数百回発生しタイムアウトする。
-  await runInTransaction(async () => {
+  const ingest = await runInTransaction(async () => {
+    let ingestSummary: IngestSummary | null = null;
+    let ingestError: string | null = null;
     for (const [tenantId, fileOverage] of tenantOverage.entries()) {
       const fileIdentifiers = tenantLines.get(tenantId) ?? new Set<string>();
       const phoneMap = detailMap.get(tenantId);
@@ -408,7 +425,84 @@ async function importSoftBank(
       }));
       await db.insert(mobileImportUnmatched).values(unmatchedInserts);
     }
+
+    // 回線情報の取り込みは既存トランザクションの「内側」で行う。
+    // runInTransaction は入れ子にできない（src/lib/db/tx.ts）ので、
+    // ここで新しく開き直さないこと。
+    //
+    // ここで例外を投げると請求データごとロールバックされてしまうため握りつぶす。
+    // 取りこぼしても次回の取込で upsert し直されるので自己修復する。
+    try {
+      ingestSummary = await ingestObservedLines({
+        runId: syncRun.id,
+        source: "billing_csv",
+        sourceRef: yearMonth,
+        // 「いつ時点の観測か」。請求ファイルはその利用月の断面なので月初を使う。
+        // 日次のコンシェル取得（現在時刻）が常に新しくなり、古い値で上書きされない。
+        observedAt: `${yearMonth}-01T00:00:00.000Z`,
+        lines: meta.lines,
+        detectRemovals: false,
+      });
+    } catch (e) {
+      ingestError = e instanceof Error ? e.message : "不明なエラー";
+      console.error("concierge ingest error:", e);
+    }
+
+    return { summary: ingestSummary, error: ingestError };
   });
+
+  const ingestSummary = ingest.summary;
+  const ingestError = ingest.error;
+
+  await finishRun(syncRun.id, {
+    status: ingestError ? "failed" : "succeeded",
+    linesSeen: ingestSummary?.linesSeen ?? 0,
+    diffsCreated: ingestSummary?.diffsCreated ?? 0,
+    errorMessage: ingestError,
+    log: [
+      ...meta.warnings.map((message) => ({
+        at: now,
+        step: "parse",
+        level: "warn",
+        message,
+      })),
+      ...(ingestSummary
+        ? [
+            {
+              at: now,
+              step: "ingest",
+              level: "info",
+              message: `取込 ${ingestSummary.linesSeen}回線 / 新規${ingestSummary.mirrorInserted} 更新${ingestSummary.mirrorUpdated} / 差分${ingestSummary.diffsCreated} (${JSON.stringify(ingestSummary.byType)})`,
+            },
+          ]
+        : []),
+    ],
+  });
+
+  if (ingestError) {
+    await notify({
+      level: "error",
+      category: "concierge_sync",
+      title: "請求ファイルからの回線情報の取り込みに失敗しました",
+      body: `${yearMonth} / ${ingestError}\n請求金額の集計は完了しています。`,
+      linkUrl: "/mobile/concierge",
+      refTable: "concierge_sync_runs",
+      refId: syncRun.id,
+    });
+  } else if (ingestSummary && ingestSummary.diffsCreated > 0) {
+    const detail = Object.entries(ingestSummary.byType)
+      .map(([k, v]) => `${DIFF_TYPE_LABELS[k] ?? k} ${v}件`)
+      .join(" / ");
+    await notify({
+      level: "info",
+      category: "concierge_diff",
+      title: `回線の差分が${ingestSummary.diffsCreated}件みつかりました`,
+      body: `${yearMonth}の請求ファイルより（${ingestSummary.linesSeen}回線を確認）\n${detail}`,
+      linkUrl: "/mobile/concierge",
+      refTable: "concierge_sync_runs",
+      refId: syncRun.id,
+    });
+  }
 
   const unmatchedNames = Array.from(unmatchedMap.keys());
 

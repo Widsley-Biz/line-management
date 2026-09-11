@@ -11,6 +11,8 @@ export const mobileLines = sqliteTable(
       .notNull()
       .references(() => tenants.id),
     phoneNumber: text("phone_number").notNull().unique(),
+    /** 突合専用キー（phoneMatchKey の結果）。表示には使わない */
+    phoneKey: text("phone_key"),
     status: text("status", { enum: ["契約中", "解約済"] })
       .notNull()
       .default("契約中"),
@@ -18,6 +20,20 @@ export const mobileLines = sqliteTable(
     contractEnd: text("contract_end"),
     deviceReturned: integer("device_returned").notNull().default(0),
     notes: text("notes"),
+    // ── SB法人コンシェル同期（承認された差分だけがここに反映される） ──
+    /** 製造番号。SBが正 */
+    imei: text("imei"),
+    /** SIMのICCID。SBが正 */
+    iccid: text("iccid"),
+    /** コンシェル上の氏名欄の最終観測値（あるべき値は tenants.company_name） */
+    conciergeName: text("concierge_name"),
+    conciergeStatus: text("concierge_status", {
+      enum: ["未確認", "一致", "要修正", "反映済", "エラー"],
+    })
+      .notNull()
+      .default("未確認"),
+    conciergeSyncedAt: text("concierge_synced_at"),
+    conciergeErrorMessage: text("concierge_error_message"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(datetime('now'))`),
@@ -25,7 +41,10 @@ export const mobileLines = sqliteTable(
       .notNull()
       .default(sql`(datetime('now'))`),
   },
-  (t) => [index("idx_mobile_lines_tenant").on(t.tenantId)]
+  (t) => [
+    index("idx_mobile_lines_tenant").on(t.tenantId),
+    index("idx_mobile_lines_phone_key").on(t.phoneKey),
+  ]
 );
 
 // ============================================================
@@ -509,3 +528,195 @@ export const auditLogs = sqliteTable("audit_logs", {
     .notNull()
     .default(sql`(datetime('now'))`),
 });
+
+// ============================================================
+// SB法人コンシェル同期
+//
+// 3層に分ける:
+//   concierge_sync_runs … いつ・どの経路で取得したか。失敗も必ず残す
+//   concierge_lines     … コンシェル側の「現状」ミラー（電話番号ごとに1行）
+//   concierge_diffs     … 差分の提案→承認→反映。削除しない＝変更記録の本体
+//
+// mobile_lines（台帳）を更新できるのは承認APIだけ。同期処理は触らない（INV-2）。
+// ============================================================
+
+/** 同期の実行履歴。ジョブ起動の「前」に queued で作る（INV-3） */
+export const conciergeSyncRuns = sqliteTable(
+  "concierge_sync_runs",
+  {
+    id: text("id").primaryKey(),
+    /** probe | read | write | billing_csv */
+    runType: text("run_type").notNull(),
+    /** schedule | manual | import */
+    trigger: text("trigger").notNull(),
+    triggeredByUserId: text("triggered_by_user_id").references(() => users.id),
+    status: text("status", {
+      enum: ["queued", "running", "succeeded", "partial", "failed", "timeout"],
+    })
+      .notNull()
+      .default("queued"),
+    queuedAt: text("queued_at").notNull(),
+    startedAt: text("started_at"),
+    finishedAt: text("finished_at"),
+    /** 30秒ごとに更新。途絶えたら sweepStaleRuns が timeout に確定させる */
+    heartbeatAt: text("heartbeat_at"),
+    currentStep: text("current_step"),
+    linesSeen: integer("lines_seen").notNull().default(0),
+    diffsCreated: integer("diffs_created").notNull().default(0),
+    writesAttempted: integer("writes_attempted").notNull().default(0),
+    writesSucceeded: integer("writes_succeeded").notNull().default(0),
+    errorMessage: text("error_message"),
+    /** [{at, step, level, message}] 上限200件 */
+    logJson: text("log_json").notNull().default("[]"),
+    /** 失敗時スクショ等のGCSパス */
+    artifactsJson: text("artifacts_json").notNull().default("[]"),
+    /** run ごとに使い捨て。終端になったら無効 */
+    callbackToken: text("callback_token").notNull(),
+    executionName: text("execution_name"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [
+    index("idx_concierge_runs_queued").on(t.queuedAt),
+    index("idx_concierge_runs_status").on(t.status),
+  ]
+);
+
+/** コンシェル側の現状ミラー。新しい観測が古い観測を上書きする */
+export const conciergeLines = sqliteTable(
+  "concierge_lines",
+  {
+    id: text("id").primaryKey(),
+    /** phoneMatchKey の結果。突合はこれだけを使う */
+    phoneKey: text("phone_key").notNull().unique(),
+    /** 観測した生表記（表示・証跡用） */
+    phoneNumber: text("phone_number").notNull(),
+    /** 氏名欄。運用上は提供先の会社名が入る */
+    contactName: text("contact_name"),
+    imei: text("imei"),
+    iccid: text("iccid"),
+    deptCode: text("dept_code"),
+    deptName: text("dept_name"),
+    planName: text("plan_name"),
+    lineStatus: text("line_status"),
+    /** billing_csv（月次請求CSV＝断面） | concierge（Playwrightの日次取得） */
+    source: text("source", { enum: ["billing_csv", "concierge"] }).notNull(),
+    /** 観測の出どころ。CSVなら年月（例 2026-07）、Playwrightなら runId */
+    sourceRef: text("source_ref"),
+    /** いつ時点の値か。古い観測で新しい観測を上書きしないための判定に使う */
+    observedAt: text("observed_at").notNull(),
+    /** 取得した全列。画面変更への耐性とデバッグ材料 */
+    rawJson: text("raw_json"),
+    firstSeenAt: text("first_seen_at").notNull(),
+    lastSeenAt: text("last_seen_at").notNull(),
+    lastSeenRunId: text("last_seen_run_id").references(
+      () => conciergeSyncRuns.id
+    ),
+    /** 直近runで消えた＝解約候補 */
+    disappearedAt: text("disappeared_at"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [index("idx_concierge_lines_iccid").on(t.iccid)]
+);
+
+/**
+ * 差分（提案→承認→反映）。終端になっても削除しない。
+ * 「この番号に過去なにがあったか」は WHERE phone_key = ? の1本で出る。
+ */
+export const conciergeDiffs = sqliteTable(
+  "concierge_diffs",
+  {
+    id: text("id").primaryKey(),
+    /** inbound（コンシェル→lime・SBが正） | outbound（lime→コンシェル・氏名欄のみ） */
+    direction: text("direction", { enum: ["inbound", "outbound"] }).notNull(),
+    diffType: text("diff_type", {
+      enum: [
+        "line_added",
+        "line_removed",
+        "number_changed",
+        "imei_changed",
+        "iccid_changed",
+        "name_mismatch",
+      ],
+    }).notNull(),
+    phoneKey: text("phone_key").notNull(),
+    phoneNumber: text("phone_number").notNull(),
+    mobileLineId: text("mobile_line_id").references(() => mobileLines.id),
+    tenantId: text("tenant_id").references(() => tenants.id),
+    /** imei | iccid | contact_name | phone_number | null（行単位） */
+    field: text("field"),
+    beforeValue: text("before_value"),
+    afterValue: text("after_value"),
+    /** 提案時点のコンシェル値。outbound の書き込み直前の競合検知に使う */
+    baseConciergeValue: text("base_concierge_value"),
+    payloadJson: text("payload_json"),
+    status: text("status", {
+      enum: [
+        "pending",
+        "approved",
+        "applied",
+        "failed",
+        "rejected",
+        "superseded",
+      ],
+    })
+      .notNull()
+      .default("pending"),
+    detectedRunId: text("detected_run_id")
+      .notNull()
+      .references(() => conciergeSyncRuns.id),
+    appliedRunId: text("applied_run_id").references(() => conciergeSyncRuns.id),
+    reviewedByUserId: text("reviewed_by_user_id").references(() => users.id),
+    reviewedAt: text("reviewed_at"),
+    appliedAt: text("applied_at"),
+    errorMessage: text("error_message"),
+    note: text("note"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [
+    index("idx_concierge_diffs_status").on(t.status),
+    index("idx_concierge_diffs_phone").on(t.phoneKey),
+    index("idx_concierge_diffs_run").on(t.detectedRunId),
+  ]
+);
+
+// ============================================================
+// アプリ内お知らせ
+// ============================================================
+export const notifications = sqliteTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    level: text("level", { enum: ["info", "warn", "error"] })
+      .notNull()
+      .default("info"),
+    category: text("category").notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    linkUrl: text("link_url"),
+    refTable: text("ref_table"),
+    refId: text("ref_id"),
+    /** Slackに飛ばなかったことも後から分かるように結果を残す */
+    slackStatus: text("slack_status", { enum: ["sent", "failed", "skipped"] })
+      .notNull()
+      .default("skipped"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (t) => [index("idx_notifications_created").on(t.createdAt)]
+);

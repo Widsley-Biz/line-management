@@ -19,6 +19,8 @@ import {
   AlertCircle,
   FileWarning,
   Calculator,
+  RefreshCw,
+  Bell,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -28,6 +30,7 @@ const commonItems = [
   { href: "/import",   label: "インポート",     icon: Upload },
   { href: "/tenants",  label: "取引先",         icon: Users },
   { href: "/activity", label: "更新履歴",       icon: History },
+  { href: "/notifications", label: "お知らせ",   icon: Bell },
   { href: "/settings", label: "設定",           icon: Settings },
 ];
 
@@ -46,6 +49,7 @@ const mobileItems = [
   { href: "/mobile/sf-pending",     label: "SF未送信一覧",   icon: AlertCircle },
   { href: "/mobile/unmatched",      label: "未照合一覧",     icon: FileWarning },
   { href: "/mobile/devices",        label: "契約端末一覧",   icon: Smartphone },
+  { href: "/mobile/concierge",      label: "コンシェル同期", icon: RefreshCw },
   { href: "/mobile/billing-items",  label: "課金項目マスタ", icon: Settings },
 ];
 

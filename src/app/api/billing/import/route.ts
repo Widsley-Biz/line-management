@@ -211,7 +211,17 @@ async function importSoftBank(
   // これらは課金項目ではないため集計からは除外されるが、回線マスタの元データになる。
   // ※ 請求ファイルは「その請求月の断面」であり全回線の一覧ではない。
   //    そのため detectRemovals は false（CSVに無い＝解約、とは言えない）。
-  const meta = parseSoftBankMetaRows(headerRow, dataRows, billingStartIdx);
+  //
+  // ここで例外が出ても請求の取込は必ず完走させる。回線情報はあくまで副次的な収集で、
+  // 請求金額の集計を巻き添えにしてはいけない。
+  let meta: ReturnType<typeof parseSoftBankMetaRows> = { lines: [], warnings: [] };
+  let metaParseError: string | null = null;
+  try {
+    meta = parseSoftBankMetaRows(headerRow, dataRows, billingStartIdx);
+  } catch (e) {
+    metaParseError = e instanceof Error ? e.message : "不明なエラー";
+    console.error("concierge meta parse error:", e);
+  }
 
   // データ行を処理
   const tenantOverage = new Map<string, number>();
@@ -280,9 +290,16 @@ async function importSoftBank(
   const now = new Date().toISOString();
   let success = 0;
 
-  // 回線同期の実行履歴。処理を始める前に作る（失敗しても記録が残るように）
-  const syncRun = await createRun({ runType: "billing_csv", trigger: "import" });
-  await markRunning(syncRun.id, "請求ファイルから回線情報を取り込み中");
+  // 回線同期の実行履歴。処理を始める前に作る（失敗しても記録が残るように）。
+  // ここも try/catch で囲む。マイグレーション未適用などで concierge_sync_runs が
+  // 無い状態でも、請求の取込だけは必ず通るようにするため。
+  let syncRun: { id: string; callbackToken: string } | null = null;
+  try {
+    syncRun = await createRun({ runType: "billing_csv", trigger: "import" });
+    await markRunning(syncRun.id, "請求ファイルから回線情報を取り込み中");
+  } catch (e) {
+    console.error("concierge run create error:", e);
+  }
 
   // 以降の書き込みは1トランザクションにまとめる。
   // 個別コミットだとGCSマウント上のDBでは同期が数百回発生しタイムアウトする。
@@ -433,6 +450,7 @@ async function importSoftBank(
     // ここで例外を投げると請求データごとロールバックされてしまうため握りつぶす。
     // 取りこぼしても次回の取込で upsert し直されるので自己修復する。
     try {
+      if (!syncRun) throw new Error("同期の実行履歴を作成できませんでした");
       ingestSummary = await ingestObservedLines({
         runId: syncRun.id,
         source: "billing_csv",
@@ -454,40 +472,44 @@ async function importSoftBank(
   const ingestSummary = ingest.summary;
   const ingestError = ingest.error;
 
-  await finishRun(syncRun.id, {
-    status: ingestError ? "failed" : "succeeded",
-    linesSeen: ingestSummary?.linesSeen ?? 0,
-    diffsCreated: ingestSummary?.diffsCreated ?? 0,
-    errorMessage: ingestError,
-    log: [
-      ...meta.warnings.map((message) => ({
-        at: now,
-        step: "parse",
-        level: "warn",
-        message,
-      })),
-      ...(ingestSummary
-        ? [
-            {
-              at: now,
-              step: "ingest",
-              level: "info",
-              message: `取込 ${ingestSummary.linesSeen}回線 / 新規${ingestSummary.mirrorInserted} 更新${ingestSummary.mirrorUpdated} / 差分${ingestSummary.diffsCreated} (${JSON.stringify(ingestSummary.byType)})`,
-            },
-          ]
-        : []),
-    ],
-  });
+  if (syncRun) {
+    await finishRun(syncRun.id, {
+      status: ingestError || metaParseError ? "failed" : "succeeded",
+      linesSeen: ingestSummary?.linesSeen ?? 0,
+      diffsCreated: ingestSummary?.diffsCreated ?? 0,
+      errorMessage: metaParseError
+        ? `回線情報の読み取りに失敗しました: ${metaParseError}`
+        : ingestError,
+      log: [
+        ...meta.warnings.map((message) => ({
+          at: now,
+          step: "parse",
+          level: "warn",
+          message,
+        })),
+        ...(ingestSummary
+          ? [
+              {
+                at: now,
+                step: "ingest",
+                level: "info",
+                message: `取込 ${ingestSummary.linesSeen}回線 / 新規${ingestSummary.mirrorInserted} 更新${ingestSummary.mirrorUpdated} / 差分${ingestSummary.diffsCreated} (${JSON.stringify(ingestSummary.byType)})`,
+              },
+            ]
+          : []),
+      ],
+    }).catch((e) => console.error("concierge finishRun error:", e));
+  }
 
-  if (ingestError) {
+  if (metaParseError || ingestError) {
     await notify({
       level: "error",
       category: "concierge_sync",
       title: "請求ファイルからの回線情報の取り込みに失敗しました",
-      body: `${yearMonth} / ${ingestError}\n請求金額の集計は完了しています。`,
+      body: `${yearMonth} / ${metaParseError ?? ingestError}\n請求金額の集計は完了しています。`,
       linkUrl: "/mobile/concierge",
       refTable: "concierge_sync_runs",
-      refId: syncRun.id,
+      refId: syncRun?.id,
     });
   } else if (ingestSummary && ingestSummary.diffsCreated > 0) {
     const detail = Object.entries(ingestSummary.byType)
@@ -500,7 +522,7 @@ async function importSoftBank(
       body: `${yearMonth}の請求ファイルより（${ingestSummary.linesSeen}回線を確認）\n${detail}`,
       linkUrl: "/mobile/concierge",
       refTable: "concierge_sync_runs",
-      refId: syncRun.id,
+      refId: syncRun?.id,
     });
   }
 

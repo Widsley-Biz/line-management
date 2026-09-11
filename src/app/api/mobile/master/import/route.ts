@@ -4,6 +4,7 @@ import { mobileLines, tenants } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
+import { phoneMatchKey } from "@/lib/phone";
 
 function parseCsvLine(line: string): string[] {
   const cols: string[] = [];
@@ -107,6 +108,8 @@ export async function POST(req: NextRequest) {
       await db.insert(mobileLines).values({
         id,
         phoneNumber,
+        // コンシェル同期の突合キー
+        phoneKey: phoneMatchKey(phoneNumber),
         tenantId,
         status,
         contractStart: contractStart || null,

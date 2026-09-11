@@ -50,20 +50,10 @@ export function classifyCallType(callTypeName: string): CallCategory | null {
   return null;
 }
 
-/** 電話番号の正規化（ハイフン・空白除去） */
-export function normalizePhoneNumber(raw: string): string {
-  return raw.replace(/[-‐−ー\s　]/g, "").trim();
-}
-
-/**
- * 電話番号の照合キー（ハイフン・空白除去に加え、先頭の0の有無を無視する）。
- * マスタCSVがExcel等で数値化され先頭の0が欠落するケースがあるため、
- * 番号同士の一致判定にはこちらを使う（保存値自体の正規化にはnormalizePhoneNumberを使う）。
- */
-export function phoneMatchKey(raw: string): string {
-  const normalized = normalizePhoneNumber(raw);
-  return normalized.startsWith("0") ? normalized.slice(1) : normalized;
-}
+// 電話番号の正規化・照合キーは src/lib/phone.ts へ移設した。
+// 既存の import 文を壊さないためここから再エクスポートする（挙動は不変）。
+// 新しいコードは "@/lib/phone" から直接 import すること。
+export { normalizePhoneNumber, phoneMatchKey } from "@/lib/phone";
 
 
 /** 利用月（YYYYMM / YYYY/MM / YYYY-MM / YYYY/MM/DD / YYYYMMDD）→ YYYY-MM に正規化。不正は null */

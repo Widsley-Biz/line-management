@@ -15,6 +15,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { Users, Clock, History, ArrowRight, RefreshCw, AlertTriangle } from "lucide-react";
 import { DashboardTabs } from "./dashboard-tabs";
+import { auth } from "@/lib/auth";
+import { canManageBilling, canViewDashboard, landingPathFor } from "@/lib/roles";
+import { redirect } from "next/navigation";
 
 function currentYearMonth() {
   const now = new Date();
@@ -48,6 +51,13 @@ function actionTypeLabel(type: string) {
 }
 
 export default async function DashboardPage() {
+  const session = await auth();
+  // member / viewer には SF反映まわりの情報しかないので見せない
+  if (!canViewDashboard(session?.user?.role)) {
+    redirect(landingPathFor(session?.user?.role));
+  }
+  // コンシェル同期の画面は admin / leader 専用なので、入れない人にはリンクを出さない
+  const canBilling = canManageBilling(session?.user?.role);
   const ym = currentYearMonth();
 
   // ── 全テナント数（IP・携帯共通） ──
@@ -200,12 +210,14 @@ export default async function DashboardPage() {
           {lastSync?.errorMessage && (
             <span className="text-red-700">{lastSync.errorMessage}</span>
           )}
-          <Link
-            href="/mobile/concierge"
-            className="ml-auto text-blue-600 hover:underline flex items-center gap-1"
-          >
-            差分を確認 <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+          {canBilling && (
+            <Link
+              href="/mobile/concierge"
+              className="ml-auto text-blue-600 hover:underline flex items-center gap-1"
+            >
+              差分を確認 <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          )}
         </CardContent>
       </Card>
 

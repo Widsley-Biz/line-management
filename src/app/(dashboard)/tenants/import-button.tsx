@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useSession } from "next-auth/react";
+import { canManageBilling } from "@/lib/roles";
 import { Upload, FileText, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +15,7 @@ type ImportResult = {
 };
 
 export function TenantImportButton() {
+  const { data: session } = useSession();
   const [showPanel, setShowPanel] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -67,6 +70,9 @@ export function TenantImportButton() {
     setResult(null);
     setError(null);
   }
+
+  // 取引先のCSV一括登録は admin / leader のみ
+  if (!canManageBilling(session?.user?.role)) return null;
 
   return (
     <>

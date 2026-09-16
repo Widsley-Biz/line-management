@@ -9,9 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { eq } from "drizzle-orm";
+import { assertRole } from "@/lib/action-auth";
+import { logActivity } from "@/lib/audit";
+import { auth } from "@/lib/auth";
+import { canEditData } from "@/lib/roles";
 
 async function createTenant(formData: FormData) {
   "use server";
+  const { userId } = await assertRole(["admin", "leader", "member"]);
   const companyName = ((formData.get("companyName") as string) ?? "").trim();
   const sfOpportunityId = ((formData.get("sfOpportunityId") as string) ?? "").trim();
   const tenantCode = ((formData.get("slug") as string) ?? "").trim();
@@ -60,6 +65,15 @@ async function createTenant(formData: FormData) {
     updatedAt: now,
   });
 
+  await logActivity({
+    userId,
+    actionType: "tenant_create",
+    message: `取引先を登録しました: ${companyName}（コード: ${slug} / SF商談ID: ${sfOpportunityId}）`,
+    targetTable: "tenants",
+    targetId: id,
+    afterJson: { companyName, slug, sfOpportunityId, assigneeId, notes },
+  });
+
   redirect("/tenants");
 }
 
@@ -74,6 +88,9 @@ export default async function NewTenantPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  const session = await auth();
+  if (!canEditData(session?.user?.role)) redirect("/tenants");
+
   const { error } = await searchParams;
   const userList = await db
     .select({ id: users.id, name: users.name })

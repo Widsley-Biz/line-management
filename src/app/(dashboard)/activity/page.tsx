@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { auditLogs, users } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { auth } from "@/lib/auth";
+import { canViewAllActivity } from "@/lib/roles";
 import { Card, CardContent } from "@/components/ui/card";
 import { ActivityTable } from "@/components/activity-table";
 
@@ -13,6 +15,11 @@ export default async function ActivityPage({
   const pageNum = Math.max(1, parseInt(page ?? "1", 10));
   const limit = 50;
   const offset = (pageNum - 1) * limit;
+
+  const session = await auth();
+  // admin / leader は全員分、member / viewer は自分の操作だけ
+  const showAll = canViewAllActivity(session?.user?.role);
+  const ownUserId = session?.user?.id ?? "";
 
   const rows = await db
     .select({
@@ -27,6 +34,7 @@ export default async function ActivityPage({
     })
     .from(auditLogs)
     .leftJoin(users, eq(auditLogs.userId, users.id))
+    .where(showAll ? undefined : eq(auditLogs.userId, ownUserId))
     .orderBy(desc(auditLogs.createdAt))
     .limit(limit)
     .offset(offset);
@@ -35,7 +43,9 @@ export default async function ActivityPage({
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">更新履歴</h1>
-        <p className="text-sm text-gray-500 mt-1">システム上の操作履歴</p>
+        <p className="text-sm text-gray-500 mt-1">
+          {showAll ? "システム上の操作履歴" : "あなたの操作履歴"}
+        </p>
       </div>
 
       <Card>

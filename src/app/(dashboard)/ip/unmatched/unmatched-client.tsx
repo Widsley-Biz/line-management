@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { useSession } from "next-auth/react";
+import { canManageBilling } from "@/lib/roles";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +28,9 @@ function parseItems(json: string): Record<string, UnmatchedItem> {
 
 export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenants: Tenant[] }) {
   const [rows, setRows] = useState<Row[]>(initial);
+  const { data: session } = useSession();
+  // 紐付けは member も可。削除は admin / leader のみ
+  const canBilling = canManageBilling(session?.user?.role);
   const [search, setSearch] = useState("");
   const [yearMonthFilter, setYearMonthFilter] = useState("");
   const [selected, setSelected] = useState<Record<string, string>>({}); // id → tenantId
@@ -242,14 +247,16 @@ export function UnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenan
                               <EyeOff className="h-4 w-4" />
                             </button>
                           )}
-                          <button
-                            onClick={() => handleDelete(r.id)}
-                            disabled={loading[r.id]}
-                            className="text-gray-300 hover:text-red-500 transition-colors"
-                            title="削除"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {canBilling && (
+                            <button
+                              onClick={() => handleDelete(r.id)}
+                              disabled={loading[r.id]}
+                              className="text-gray-300 hover:text-red-500 transition-colors"
+                              title="削除"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

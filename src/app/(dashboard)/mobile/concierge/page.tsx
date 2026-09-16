@@ -1,3 +1,6 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { canManageBilling } from "@/lib/roles";
 import { db } from "@/lib/db";
 import {
   conciergeDiffs,
@@ -24,6 +27,9 @@ export default async function ConciergePage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  const session = await auth();
+  if (!canManageBilling(session?.user?.role)) redirect("/");
+
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page ?? "1") || 1);
   const status = sp.status || "pending";

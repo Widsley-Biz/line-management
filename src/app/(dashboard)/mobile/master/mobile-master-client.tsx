@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useSession } from "next-auth/react";
+import { canManageBilling } from "@/lib/roles";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +65,9 @@ function DeviceReturnedBadge({ value }: { value: number }) {
 }
 
 export function MobileMasterClient({ lines, tenants }: Props) {
+  const { data: session } = useSession();
+  // 回線マスタの登録・編集・削除・CSV登録は admin / leader のみ
+  const canBilling = canManageBilling(session?.user?.role);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -161,12 +166,16 @@ export function MobileMasterClient({ lines, tenants }: Props) {
           <p className="text-sm text-gray-500 mt-1">電話番号と取引先の紐付けを管理します</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setShowImport(!showImport); setShowForm(false); }}>
-            <Upload className="h-4 w-4 mr-2" />CSV一括登録
-          </Button>
-          <Button onClick={() => { setEditTarget(null); setShowForm(true); setShowImport(false); }}>
-            <Plus className="h-4 w-4 mr-2" />新規登録
-          </Button>
+          {canBilling && (
+            <>
+              <Button variant="outline" onClick={() => { setShowImport(!showImport); setShowForm(false); }}>
+                <Upload className="h-4 w-4 mr-2" />CSV一括登録
+              </Button>
+              <Button onClick={() => { setEditTarget(null); setShowForm(true); setShowImport(false); }}>
+                <Plus className="h-4 w-4 mr-2" />新規登録
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -381,22 +390,26 @@ export function MobileMasterClient({ lines, tenants }: Props) {
                       <td className="py-2 pr-4 text-gray-500">{line.notes ?? "-"}</td>
                       <td className="py-2">
                         <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0"
-                            onClick={() => { setEditTarget(line); setShowForm(true); setShowImport(false); }}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
-                            onClick={() => handleDelete(line.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {canBilling && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                                onClick={() => { setEditTarget(line); setShowForm(true); setShowImport(false); }}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                                onClick={() => handleDelete(line.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

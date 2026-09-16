@@ -10,6 +10,7 @@ import { eq, and, ne, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { runInTransaction } from "@/lib/db/tx";
+import { requireRole } from "@/lib/api-auth";
 
 // GET: pending な未照合一覧を返す
 export async function GET() {
@@ -23,8 +24,10 @@ export async function GET() {
 
 // PATCH: 取引先割当（assign）または無視（ignore）
 export async function PATCH(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
-    return await patchUnmatched(req);
+    return await patchUnmatched(req, guard.session.user.id);
   } catch (error) {
     // 失敗時はトランザクションがロールバックされ、金額は加算されていない
     const detail = error instanceof Error ? error.message : "不明なエラー";
@@ -38,7 +41,7 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-async function patchUnmatched(req: NextRequest) {
+async function patchUnmatched(req: NextRequest, userId: string) {
   const { id, action, tenantId } = await req.json() as {
     id: string;
     action: "assign" | "ignore";
@@ -51,10 +54,33 @@ async function patchUnmatched(req: NextRequest) {
   const now = new Date().toISOString();
 
   if (action === "ignore") {
+    const target = await db
+      .select({
+        rawName: mobileImportUnmatched.rawName,
+        yearMonth: mobileImportUnmatched.yearMonth,
+      })
+      .from(mobileImportUnmatched)
+      .where(eq(mobileImportUnmatched.id, id))
+      .get();
+
+    if (!target) {
+      return NextResponse.json({ error: "対象データが見つかりません" }, { status: 404 });
+    }
+
     await db
       .update(mobileImportUnmatched)
       .set({ status: "ignored", updatedAt: now })
       .where(eq(mobileImportUnmatched.id, id));
+
+    await logActivity({
+      userId,
+      actionType: "unmatched_ignore",
+      message: `携帯未照合を対象外にしました: ${target.rawName}（${target.yearMonth}）`,
+      targetTable: "mobile_import_unmatched",
+      targetId: id,
+      afterJson: { rawName: target.rawName, yearMonth: target.yearMonth },
+    });
+
     return NextResponse.json({ ok: true });
   }
 
@@ -148,6 +174,31 @@ async function patchUnmatched(req: NextRequest) {
         .where(eq(mobileImportUnmatched.id, id));
     });
 
+    const assigned = await db
+      .select({ companyName: tenants.companyName })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId))
+      .get();
+
+    await logActivity({
+      userId,
+      actionType: "unmatched_assign",
+      message:
+        `携帯未照合を取引先に割当: ${row.rawName}（${yearMonth}）` +
+        ` → ${assigned?.companyName ?? tenantId} / 超過額 ${overageTotal}円`,
+      targetTable: "mobile_import_unmatched",
+      targetId: id,
+      afterJson: {
+        rawName: row.rawName,
+        phoneNumber,
+        yearMonth,
+        overageTotal,
+        tenantId,
+        companyName: assigned?.companyName ?? null,
+        usageId,
+      },
+    });
+
     return NextResponse.json({ ok: true, usageId });
   }
 
@@ -156,6 +207,8 @@ async function patchUnmatched(req: NextRequest) {
 
 // DELETE: 未照合レコードを削除（単体 id / 複数 ids の一括削除に対応）
 export async function DELETE(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   const body = await req.json();
 
   if (Array.isArray(body?.ids)) {
@@ -163,19 +216,57 @@ export async function DELETE(req: NextRequest) {
     if (ids.length === 0) {
       return NextResponse.json({ error: "ids is empty" }, { status: 400 });
     }
+    const targets = await db
+      .select({
+        rawName: mobileImportUnmatched.rawName,
+        yearMonth: mobileImportUnmatched.yearMonth,
+      })
+      .from(mobileImportUnmatched)
+      .where(inArray(mobileImportUnmatched.id, ids));
+
     await db
       .delete(mobileImportUnmatched)
       .where(inArray(mobileImportUnmatched.id, ids));
+
     await logActivity({
-      actionType: "delete",
-      message: `携帯未照合を選択削除: ${ids.length}件`,
+      userId: guard.session.user.id,
+      actionType: "unmatched_delete",
+      message:
+        `携帯未照合を選択削除: ${ids.length}件` +
+        (targets.length > 0 ? `（${targets.map((t) => t.rawName).join("、")}）` : ""),
       targetTable: "mobile_import_unmatched",
+      afterJson: { ids, targets },
     });
     return NextResponse.json({ ok: true, deleted: ids.length });
   }
 
   const { id } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const target = await db
+    .select({
+      rawName: mobileImportUnmatched.rawName,
+      yearMonth: mobileImportUnmatched.yearMonth,
+      overageTotal: mobileImportUnmatched.overageTotal,
+    })
+    .from(mobileImportUnmatched)
+    .where(eq(mobileImportUnmatched.id, id))
+    .get();
+
+  if (!target) {
+    return NextResponse.json({ error: "対象データが見つかりません" }, { status: 404 });
+  }
+
   await db.delete(mobileImportUnmatched).where(eq(mobileImportUnmatched.id, id));
+
+  await logActivity({
+    userId: guard.session.user.id,
+    actionType: "unmatched_delete",
+    message: `携帯未照合を削除しました: ${target.rawName}（${target.yearMonth}）`,
+    targetTable: "mobile_import_unmatched",
+    targetId: id,
+    afterJson: target,
+  });
+
   return NextResponse.json({ ok: true });
 }

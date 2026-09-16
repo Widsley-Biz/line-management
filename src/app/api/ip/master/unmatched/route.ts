@@ -6,6 +6,7 @@ import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { runInTransaction } from "@/lib/db/tx";
 import { phoneMatchKey } from "@/lib/ip-billing";
+import { requireRole } from "@/lib/api-auth";
 
 // GET: 未解決の番号マスタ未照合一覧を返す
 export async function GET() {
@@ -19,6 +20,8 @@ export async function GET() {
 
 // PATCH: 取引先割当（assign、ip_numbersに登録）または無視（ignore）
 export async function PATCH(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const { id, action, tenantId } = (await req.json()) as {
       id: string;
@@ -136,6 +139,8 @@ export async function PATCH(req: NextRequest) {
 
 // DELETE: 未照合レコードを削除（単一idのid、または複数選択のids配列）
 export async function DELETE(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   const body = await req.json();
 
   if (Array.isArray(body?.ids)) {

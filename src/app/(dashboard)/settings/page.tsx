@@ -1,3 +1,4 @@
+import { canViewSettings, landingPathFor } from "@/lib/roles";
 import { Fragment } from "react";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
@@ -14,11 +15,14 @@ import bcrypt from "bcryptjs";
 import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/audit";
 import { ConfirmDeleteButton } from "@/components/confirm-delete-button";
+import { assertRole } from "@/lib/action-auth";
+import { canManageUsers as canManageUsersFor } from "@/lib/roles";
 
 // ── User actions ─────────────────────────────────────────────
 
 async function createUser(formData: FormData) {
   "use server";
+  const { userId } = await assertRole(["admin", "leader"]);
   const name = formData.get("name") as string;
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
@@ -32,9 +36,8 @@ async function createUser(formData: FormData) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
-  const session = await auth();
   await logActivity({
-    userId: session?.user?.id,
+    userId,
     actionType: "user_create",
     message: `ユーザーを追加しました: ${name} (${email})`,
     targetTable: "users",
@@ -45,6 +48,7 @@ async function createUser(formData: FormData) {
 
 async function updateUser(formData: FormData) {
   "use server";
+  const { userId } = await assertRole(["admin", "leader"]);
   const id = formData.get("userId") as string;
   const name = formData.get("name") as string;
   const email = formData.get("email") as string;
@@ -60,9 +64,8 @@ async function updateUser(formData: FormData) {
     updates.passwordHash = await bcrypt.hash(newPassword, 12);
   }
   await db.update(users).set(updates).where(eq(users.id, id));
-  const session = await auth();
   await logActivity({
-    userId: session?.user?.id,
+    userId,
     actionType: "user_update",
     message: `ユーザーを更新しました: ${name}`,
     targetTable: "users",
@@ -73,6 +76,7 @@ async function updateUser(formData: FormData) {
 
 async function updateSfUserId(formData: FormData) {
   "use server";
+  const { userId } = await assertRole(["admin"]);
   const id = formData.get("userId") as string;
   const sfUserId = (formData.get("sfUserId") as string)?.trim() || null;
   if (!id) return;
@@ -80,9 +84,8 @@ async function updateSfUserId(formData: FormData) {
     sfUserId,
     updatedAt: new Date().toISOString(),
   }).where(eq(users.id, id));
-  const session = await auth();
   await logActivity({
-    userId: session?.user?.id,
+    userId,
     actionType: "sf_mapping",
     message: sfUserId
       ? `SF UserID を手動設定: ${sfUserId}`
@@ -95,13 +98,13 @@ async function updateSfUserId(formData: FormData) {
 
 async function deleteUser(formData: FormData) {
   "use server";
+  const { userId } = await assertRole(["admin", "leader"]);
   const id = formData.get("userId") as string;
   const name = formData.get("userName") as string;
   if (!id) return;
   await db.delete(users).where(eq(users.id, id));
-  const session = await auth();
   await logActivity({
-    userId: session?.user?.id,
+    userId,
     actionType: "user_delete",
     message: `ユーザーを削除しました: ${name}`,
     targetTable: "users",
@@ -117,12 +120,22 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{ editUser?: string; sfError?: string; sfSuccess?: string }>;
 }) {
+  const guardSession = await auth();
+  // 設定画面は admin / leader のみ
+  if (!canViewSettings(guardSession?.user?.role)) {
+    redirect(landingPathFor(guardSession?.user?.role));
+  }
+
   const { editUser, sfError, sfSuccess: _sfSuccess } = await searchParams;
 
   const userList = await db.select().from(users).orderBy(users.name);
 
   const currentSession = await auth();
-  const editingUser = editUser ? userList.find((u) => u.id === editUser) : null;
+  // ユーザーの追加・編集・削除は admin / leader。
+  // SF UserID の手動設定だけは admin のみ（下の入力欄で別途判定している）
+  const canManageUsers = canManageUsersFor(currentSession?.user?.role);
+  const editingUser =
+    canManageUsers && editUser ? userList.find((u) => u.id === editUser) : null;
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -195,22 +208,26 @@ export default async function SettingsPage({
                             SF連携
                           </a>
                         )}
-                        <a
-                          href={`/settings?editUser=${u.id}`}
-                          className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700"
-                        >
-                          編集
-                        </a>
-                        <form action={deleteUser}>
-                          <input type="hidden" name="userId" value={u.id} />
-                          <input type="hidden" name="userName" value={u.name} />
-                          <ConfirmDeleteButton
-                            message={`${u.name} を削除しますか？`}
-                            className="text-xs px-2 py-1 rounded bg-red-50 hover:bg-red-100 text-red-700"
-                          >
-                            削除
-                          </ConfirmDeleteButton>
-                        </form>
+                        {canManageUsers && (
+                          <>
+                            <a
+                              href={`/settings?editUser=${u.id}`}
+                              className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700"
+                            >
+                              編集
+                            </a>
+                            <form action={deleteUser}>
+                              <input type="hidden" name="userId" value={u.id} />
+                              <input type="hidden" name="userName" value={u.name} />
+                              <ConfirmDeleteButton
+                                message={`${u.name} を削除しますか？`}
+                                className="text-xs px-2 py-1 rounded bg-red-50 hover:bg-red-100 text-red-700"
+                              >
+                                削除
+                              </ConfirmDeleteButton>
+                            </form>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -279,6 +296,7 @@ export default async function SettingsPage({
             </tbody>
           </table>
 
+          {canManageUsers && (
           <div className="border-t pt-4">
             <p className="text-sm font-medium mb-3">ユーザー追加</p>
             <form action={createUser} className="grid grid-cols-2 gap-3">
@@ -312,6 +330,7 @@ export default async function SettingsPage({
               </div>
             </form>
           </div>
+          )}
         </CardContent>
       </Card>
 

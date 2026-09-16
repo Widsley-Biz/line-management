@@ -4,8 +4,11 @@ import { ipNumbers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
+import { requireRole } from "@/lib/api-auth";
 
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const body = await req.json();
     const { phoneNumber, subNumber, tenantId, status, notes } = body;
@@ -44,6 +47,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  // 既存番号の編集だけは member にも許可（新規登録 POST と削除 DELETE は leader 以上）
+  const guard = await requireRole(["admin", "leader", "member"]);
+  if (!guard.ok) return guard.response;
   try {
     const body = await req.json();
     const { id, phoneNumber, subNumber, tenantId, status, notes } = body;
@@ -79,6 +85,8 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const { id } = await req.json();
 

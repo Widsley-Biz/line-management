@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { useSession } from "next-auth/react";
+import { canManageBilling } from "@/lib/roles";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +49,9 @@ export function MobileBillingClient({
   rows: Row[];
   yearMonth: string;
 }) {
+  const { data: session } = useSession();
+  // SF反映・手動追加・対応不要化は admin / leader のみ
+  const canBilling = canManageBilling(session?.user?.role);
   const [tab, setTab] = useState<"all" | "under500">("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [excludeChecked, setExcludeChecked] = useState<Set<string>>(new Set());
@@ -269,7 +274,8 @@ export function MobileBillingClient({
         </Card>
       </div>
 
-      {/* 手動追加フォーム */}
+      {/* 手動追加フォーム（請求金額を動かすため admin / leader のみ） */}
+      {canBilling && (
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center justify-between mb-3">
@@ -371,6 +377,7 @@ export function MobileBillingClient({
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* タブ */}
       <div className="flex gap-2">
@@ -427,7 +434,7 @@ export function MobileBillingClient({
             </a>
 
             {/* 全件タブのボタン */}
-            {tab === "all" && (
+            {canBilling && tab === "all" && (
               <>
                 {checkedIds.length > 0 && (
                   <Button
@@ -446,7 +453,7 @@ export function MobileBillingClient({
             )}
 
             {/* 500円未満タブのボタン */}
-            {tab === "under500" && excludeChecked.size > 0 && (
+            {canBilling && tab === "under500" && excludeChecked.size > 0 && (
               <Button
                 size="sm"
                 variant="outline"
@@ -473,7 +480,7 @@ export function MobileBillingClient({
                 <thead>
                   <tr className="border-b bg-gray-50">
                     <th className="px-4 py-3 w-8">
-                      {tab === "all" ? (
+                      {!canBilling ? null : tab === "all" ? (
                         <input
                           type="checkbox"
                           checked={checked.size === pendingRows.length && pendingRows.length > 0}
@@ -504,7 +511,7 @@ export function MobileBillingClient({
                     return (
                       <tr key={r.id} className="border-b hover:bg-gray-50">
                         <td className="px-4 py-3">
-                          {tab === "all" ? (
+                          {!canBilling ? null : tab === "all" ? (
                             isPending && (
                               <input
                                 type="checkbox"

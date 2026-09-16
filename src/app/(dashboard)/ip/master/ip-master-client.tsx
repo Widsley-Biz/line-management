@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useSession } from "next-auth/react";
+import { canManageBilling, canEditIpMaster } from "@/lib/roles";
+import { TenantCombobox } from "@/components/tenant-combobox";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +43,11 @@ type ImportResult = {
 };
 
 export function IpMasterClient({ numbers, tenants, unmatchedCount }: Props) {
+  const { data: session } = useSession();
+  // 新規登録・削除・CSV一括登録は admin / leader のみ
+  const canBilling = canManageBilling(session?.user?.role);
+  // 既存番号の編集だけは member にも開けている
+  const canEdit = canEditIpMaster(session?.user?.role);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -60,12 +68,18 @@ export function IpMasterClient({ numbers, tenants, unmatchedCount }: Props) {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setIsSubmitting(true);
     const form = e.currentTarget;
+    // 会社名は検索欄（hidden input）なのでブラウザの必須チェックが効かない
+    const tenantId = (form.elements.namedItem("tenantId") as HTMLInputElement).value;
+    if (!tenantId) {
+      alert("会社名を検索して選択してください");
+      return;
+    }
+    setIsSubmitting(true);
     const data = {
       phoneNumber: (form.elements.namedItem("phoneNumber") as HTMLInputElement).value,
       subNumber: (form.elements.namedItem("subNumber") as HTMLInputElement).value || null,
-      tenantId: (form.elements.namedItem("tenantId") as HTMLSelectElement).value,
+      tenantId,
       status: (form.elements.namedItem("status") as HTMLSelectElement).value,
       notes: (form.elements.namedItem("notes") as HTMLInputElement).value || null,
       id: editTarget?.id,
@@ -139,19 +153,23 @@ export function IpMasterClient({ numbers, tenants, unmatchedCount }: Props) {
           <p className="text-sm text-gray-500 mt-1">電話番号（表番号・裏番号）と取引先の紐付けを管理します</p>
         </div>
         <div className="flex gap-2">
-          {unmatchedCount > 0 && (
+          {canBilling && unmatchedCount > 0 && (
             <Link href="/ip/master/unmatched">
               <Button variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50">
                 <FileWarning className="h-4 w-4 mr-2" />未照合 {unmatchedCount}件
               </Button>
             </Link>
           )}
-          <Button variant="outline" onClick={() => { setShowImport(!showImport); setShowForm(false); }}>
-            <Upload className="h-4 w-4 mr-2" />CSV一括登録
-          </Button>
-          <Button onClick={() => { setEditTarget(null); setShowForm(true); setShowImport(false); }}>
-            <Plus className="h-4 w-4 mr-2" />新規登録
-          </Button>
+          {canBilling && (
+            <>
+              <Button variant="outline" onClick={() => { setShowImport(!showImport); setShowForm(false); }}>
+                <Upload className="h-4 w-4 mr-2" />CSV一括登録
+              </Button>
+              <Button onClick={() => { setEditTarget(null); setShowForm(true); setShowImport(false); }}>
+                <Plus className="h-4 w-4 mr-2" />新規登録
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -259,17 +277,17 @@ export function IpMasterClient({ numbers, tenants, unmatchedCount }: Props) {
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">会社名 *</Label>
-                <select
+                {/* 未照合の取引先割当と同じ、部分一致で候補を出す検索欄 */}
+                <TenantCombobox
+                  key={editTarget?.id ?? "new"}
+                  tenants={tenants}
                   name="tenantId"
-                  required
-                  defaultValue={editTarget?.tenantId}
-                  className="w-full h-8 rounded-md border border-input bg-background px-3 py-1 text-sm"
-                >
-                  <option value="">選択してください</option>
-                  {tenants.map((t) => (
-                    <option key={t.id} value={t.id}>{t.companyName}</option>
-                  ))}
-                </select>
+                  defaultTenant={
+                    editTarget
+                      ? { id: editTarget.tenantId, companyName: editTarget.companyName }
+                      : null
+                  }
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">ステータス</Label>
@@ -345,22 +363,28 @@ export function IpMasterClient({ numbers, tenants, unmatchedCount }: Props) {
                       <td className="py-2 pr-4 text-gray-500">{n.notes ?? "-"}</td>
                       <td className="py-2">
                         <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0"
-                            onClick={() => { setEditTarget(n); setShowForm(true); setShowImport(false); }}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
-                            onClick={() => handleDelete(n.id)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {canEdit && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0"
+                              title="編集"
+                              onClick={() => { setEditTarget(n); setShowForm(true); setShowImport(false); }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canBilling && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                              title="削除"
+                              onClick={() => handleDelete(n.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>

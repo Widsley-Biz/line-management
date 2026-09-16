@@ -1,5 +1,7 @@
 "use client";
 import { useState, useMemo, useTransition } from "react";
+import { useSession } from "next-auth/react";
+import { canManageUsers } from "@/lib/roles";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { SortableHeader } from "@/components/sortable-header";
@@ -25,6 +27,9 @@ type TenantRow = {
 };
 
 export function TenantsTable({ rows }: { rows: TenantRow[] }) {
+  const { data: session } = useSession();
+  // 取引先の削除は請求実績まで連鎖削除するため admin / leader のみ
+  const canDelete = canManageUsers(session?.user?.role);
   const [search, setSearch] = useState("");
   const [sortCol, setSortCol] = useState("companyName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -73,9 +78,12 @@ export function TenantsTable({ rows }: { rows: TenantRow[] }) {
           <DialogHeader>
             <DialogTitle>取引先を削除しますか？</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-gray-600">
-            <span className="font-semibold">{deleteTarget?.companyName}</span> を削除します。関連するデータ（回線・請求・タリフ等）もすべて削除されます。この操作は取り消せません。
-          </p>
+          <div className="space-y-2 text-sm text-gray-600">
+            <p className="font-semibold text-gray-900">{deleteTarget?.companyName}</p>
+            <p>
+              取引先を削除すると回線・請求実績・明細まで削除されます。本当に実行しますか？
+            </p>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={isPending}>
               キャンセル
@@ -137,13 +145,15 @@ export function TenantsTable({ rows }: { rows: TenantRow[] }) {
                 <td className="px-4 py-3 text-right">{t.ipNumberCount}</td>
                 <td className="px-4 py-3 text-right">{t.mobileLineCount}</td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => setDeleteTarget(t)}
-                    className="text-gray-300 hover:text-red-500 transition-colors"
-                    title="削除"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {canDelete && (
+                    <button
+                      onClick={() => setDeleteTarget(t)}
+                      className="text-gray-300 hover:text-red-500 transition-colors"
+                      title="削除"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

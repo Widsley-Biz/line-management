@@ -5,8 +5,11 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { phoneMatchKey } from "@/lib/phone";
+import { requireRole } from "@/lib/api-auth";
 
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const body = await req.json();
     const { phoneNumber, tenantId, status, contractStart, contractEnd, deviceReturned, notes } = body;
@@ -49,6 +52,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const body = await req.json();
     const { id, phoneNumber, tenantId, status, contractStart, contractEnd, deviceReturned, notes } = body;
@@ -87,6 +92,8 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const { id } = await req.json();
 

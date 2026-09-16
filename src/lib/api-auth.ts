@@ -17,7 +17,8 @@ import { auth } from "@/lib/auth";
  *   guard.session.user.id を使う
  */
 
-export type Role = "admin" | "leader" | "member" | "viewer";
+export type { Role } from "@/lib/roles";
+import type { Role } from "@/lib/roles";
 
 export type Guard =
   | { ok: true; session: Session }

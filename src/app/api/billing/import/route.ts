@@ -18,6 +18,7 @@ import { ingestObservedLines, type IngestSummary } from "@/lib/concierge/ingest"
 import { createRun, finishRun, markRunning } from "@/lib/concierge/runs";
 import { notify } from "@/lib/notify";
 import { DIFF_TYPE_LABELS } from "@/lib/concierge/labels";
+import { requireRole } from "@/lib/api-auth";
 
 interface ImportResult {
   success: number;
@@ -544,6 +545,8 @@ async function importSoftBank(
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const formData = await req.formData();
     const yearMonth = formData.get("yearMonth") as string;

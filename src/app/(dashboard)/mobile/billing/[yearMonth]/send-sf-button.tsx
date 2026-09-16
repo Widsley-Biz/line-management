@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { useSession } from "next-auth/react";
+import { canManageBilling } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Send, Loader2 } from "lucide-react";
 
@@ -13,6 +15,7 @@ interface Props {
 }
 
 export function MobileSendSfButton({ usageIds, tenantId, yearMonth, bulk, label, onSuccess }: Props) {
+  const { data: session } = useSession();
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +44,9 @@ export function MobileSendSfButton({ usageIds, tenantId, yearMonth, bulk, label,
       setLoading(false);
     }
   }
+
+  // SF反映は admin / leader のみ。member / viewer にはボタンを出さない
+  if (!canManageBilling(session?.user?.role)) return null;
 
   if (done) return <span className="text-sm text-green-600 font-medium">✓ 送信完了</span>;
 

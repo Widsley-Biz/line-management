@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { mobileBillingItems } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { requireRole } from "@/lib/api-auth";
 
 export async function GET() {
   const items = await db
@@ -12,6 +13,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   const { itemName, isBillable, continuousImport } = await req.json();
   if (!itemName?.trim()) {
     return NextResponse.json({ error: "項目名は必須です" }, { status: 400 });
@@ -31,6 +34,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   const { id, isBillable, continuousImport } = await req.json();
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
@@ -44,6 +49,8 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   const { id } = await req.json();
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   await db.delete(mobileBillingItems).where(eq(mobileBillingItems.id, id));

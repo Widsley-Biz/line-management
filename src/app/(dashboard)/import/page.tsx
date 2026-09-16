@@ -1,6 +1,11 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { canManageBilling } from "@/lib/roles";
 import { ImportForm } from "./import-form";
 
-export default function ImportPage() {
+export default async function ImportPage() {
+  const session = await auth();
+  if (!canManageBilling(session?.user?.role)) redirect("/");
   return (
     <div className="space-y-6">
       <div>

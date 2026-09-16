@@ -1,3 +1,6 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { canManageBilling } from "@/lib/roles";
 import { db } from "@/lib/db";
 import { ipTariffs, tenants } from "@/lib/db/schema";
 import { eq, isNull, isNotNull } from "drizzle-orm";
@@ -5,6 +8,8 @@ import { DEFAULT_TARIFF } from "@/lib/ip-billing";
 import { IpTariffsClient } from "./ip-tariffs-client";
 
 export default async function IpTariffsPage() {
+  const session = await auth();
+  if (!canManageBilling(session?.user?.role)) redirect("/");
   const [defaultRow] = await db
     .select()
     .from(ipTariffs)

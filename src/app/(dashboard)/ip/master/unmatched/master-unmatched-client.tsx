@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { useSession } from "next-auth/react";
+import { canManageBilling } from "@/lib/roles";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +23,9 @@ type Tenant = { id: string; companyName: string };
 
 export function MasterUnmatchedClient({ rows: initial, tenants }: { rows: Row[]; tenants: Tenant[] }) {
   const [rows, setRows] = useState<Row[]>(initial);
+  const { data: session } = useSession();
+  // 紐付けは member も可。削除は admin / leader のみ
+  const canBilling = canManageBilling(session?.user?.role);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [checked, setChecked] = useState<Record<string, boolean>>({});
@@ -149,7 +154,7 @@ export function MasterUnmatchedClient({ rows: initial, tenants }: { rows: Row[];
           onChange={(e) => setSearch(e.target.value)}
           className="h-9 rounded-lg border border-input bg-background px-3 text-sm w-72 focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
-        {checkedIds.length > 0 && (
+        {canBilling && checkedIds.length > 0 && (
           <Button
             size="sm"
             variant="outline"
@@ -180,12 +185,14 @@ export function MasterUnmatchedClient({ rows: initial, tenants }: { rows: Row[];
               <thead>
                 <tr className="border-b bg-gray-50">
                   <th className="px-4 py-3 w-8">
-                    <input
-                      type="checkbox"
-                      checked={allFilteredChecked}
-                      onChange={toggleAllFiltered}
-                      aria-label="全て選択"
-                    />
+                    {canBilling && (
+                      <input
+                        type="checkbox"
+                        checked={allFilteredChecked}
+                        onChange={toggleAllFiltered}
+                        aria-label="全て選択"
+                      />
+                    )}
                   </th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">電話番号（表番号）</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">裏番号</th>
@@ -202,12 +209,14 @@ export function MasterUnmatchedClient({ rows: initial, tenants }: { rows: Row[];
                   return (
                     <tr key={r.id} className={`border-b hover:bg-gray-50 ${r.status === "ignored" ? "opacity-50" : ""}`}>
                       <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={!!checked[r.id]}
-                          onChange={(e) => setChecked((p) => ({ ...p, [r.id]: e.target.checked }))}
-                          aria-label={`${r.phoneNumber}を選択`}
-                        />
+                        {canBilling && (
+                          <input
+                            type="checkbox"
+                            checked={!!checked[r.id]}
+                            onChange={(e) => setChecked((p) => ({ ...p, [r.id]: e.target.checked }))}
+                            aria-label={`${r.phoneNumber}を選択`}
+                          />
+                        )}
                       </td>
                       <td className="px-4 py-3 font-mono font-medium text-gray-800">{formatJapanesePhoneNumber(r.phoneNumber)}</td>
                       <td className="px-4 py-3 font-mono text-gray-500">{r.subNumber ? formatJapanesePhoneNumber(r.subNumber) : "-"}</td>
@@ -256,14 +265,16 @@ export function MasterUnmatchedClient({ rows: initial, tenants }: { rows: Row[];
                               <EyeOff className="h-4 w-4" />
                             </button>
                           )}
-                          <button
-                            onClick={() => handleDelete(r.id)}
-                            disabled={loading[r.id]}
-                            className="text-gray-300 hover:text-red-500 transition-colors"
-                            title="削除"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {canBilling && (
+                            <button
+                              onClick={() => handleDelete(r.id)}
+                              disabled={loading[r.id]}
+                              className="text-gray-300 hover:text-red-500 transition-colors"
+                              title="削除"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

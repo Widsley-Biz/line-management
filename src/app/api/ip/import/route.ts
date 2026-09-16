@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logActivity } from "@/lib/audit";
 import { importCdrFile, type CdrFileResult } from "@/lib/cdr-import";
+import { requireRole } from "@/lib/api-auth";
 
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const formData = await req.formData();
     const files = formData.getAll("files") as File[];

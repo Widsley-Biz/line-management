@@ -6,6 +6,7 @@ import type { Connection } from "jsforce";
 import { logActivity } from "@/lib/audit";
 import { auth } from "@/lib/auth";
 import { getUserSFConnection, getSystemSFConnection } from "@/lib/sf-connection";
+import { requireRole } from "@/lib/api-auth";
 
 // 利用月から請求月（+2ヶ月）を計算
 function getBillingMonth(yearMonth: string): { startDate: string; endDate: string; billingMonth: string } {
@@ -80,6 +81,8 @@ async function sendToSF(
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const body = await req.json();
     const { tenantId, yearMonth, usageIds } = body as {

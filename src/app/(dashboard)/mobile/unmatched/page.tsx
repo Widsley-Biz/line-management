@@ -1,9 +1,18 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { canManageBilling, landingPathFor } from "@/lib/roles";
 import { db } from "@/lib/db";
 import { mobileImportUnmatched, tenants } from "@/lib/db/schema";
 import { ne } from "drizzle-orm";
 import { UnmatchedClient } from "./unmatched-client";
 
 export default async function UnmatchedPage() {
+  const guardSession = await auth();
+  // 未照合一覧は admin / leader のみ
+  if (!canManageBilling(guardSession?.user?.role)) {
+    redirect(landingPathFor(guardSession?.user?.role));
+  }
+
   const [rows, allTenants] = await Promise.all([
     db
       .select()

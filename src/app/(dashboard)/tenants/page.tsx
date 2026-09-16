@@ -6,6 +6,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Plus } from "lucide-react";
 import { TenantsTable } from "@/components/tenants-table";
 import { TenantImportButton } from "./import-button";
+import { auth } from "@/lib/auth";
+import { canEditData } from "@/lib/roles";
 
 export default async function TenantsPage({
   searchParams,
@@ -44,6 +46,10 @@ export default async function TenantsPage({
     mobileLineCount: Number(r.mobileLineCount),
   }));
 
+  const session = await auth();
+  // 取引先の登録は viewer 以外
+  const canEdit = canEditData(session?.user?.role);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -53,13 +59,15 @@ export default async function TenantsPage({
         </div>
         <div className="flex items-center gap-2">
           <TenantImportButton />
-          <Link
-            href="/tenants/new"
-            className="inline-flex items-center gap-2 bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm font-medium hover:bg-primary/80 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            新規登録
-          </Link>
+          {canEdit && (
+            <Link
+              href="/tenants/new"
+              className="inline-flex items-center gap-2 bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm font-medium hover:bg-primary/80 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              新規登録
+            </Link>
+          )}
         </div>
       </div>
 

@@ -10,12 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { TenantCombobox } from "@/components/tenant-combobox";
 import { ActionsTable } from "@/components/actions-table";
+import { assertRole } from "@/lib/action-auth";
 
 const ACTION_TYPES = ["SF送信待ち", "請求差分確認", "ユニットch対応", "その他"] as const;
 type ActionType = typeof ACTION_TYPES[number];
 
 async function updateActionStatus(formData: FormData) {
   "use server";
+  await assertRole(["admin", "leader", "member"]);
   const actionId = formData.get("actionId") as string;
   const status = formData.get("status") as "未着手" | "対応中" | "完了";
   const now = new Date().toISOString();
@@ -28,6 +30,7 @@ async function updateActionStatus(formData: FormData) {
 
 async function updateAction(formData: FormData) {
   "use server";
+  await assertRole(["admin", "leader", "member"]);
   const actionId = formData.get("actionId") as string;
   const type = formData.get("type") as ActionType;
   const description = formData.get("description") as string;
@@ -44,6 +47,7 @@ async function updateAction(formData: FormData) {
 
 async function deleteAction(formData: FormData) {
   "use server";
+  await assertRole(["admin", "leader", "member"]);
   const actionId = formData.get("actionId") as string;
   await db.delete(actions).where(eq(actions.id, actionId));
   redirect("/actions");
@@ -51,6 +55,7 @@ async function deleteAction(formData: FormData) {
 
 async function createAction(formData: FormData) {
   "use server";
+  await assertRole(["admin", "leader", "member"]);
   const type = formData.get("type") as string;
   const description = formData.get("description") as string;
   const tenantId = (formData.get("tenantId") as string) || null;

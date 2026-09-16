@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ipUsages } from "@/lib/db/schema";
 import { inArray } from "drizzle-orm";
+import { requireRole } from "@/lib/api-auth";
 
 export async function PATCH(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   const { usageIds, status, reason } = await req.json();
   if (!Array.isArray(usageIds) || usageIds.length === 0) {
     return NextResponse.json({ error: "usageIds required" }, { status: 400 });

@@ -10,6 +10,7 @@ import {
   recalcIpUsage,
   type CallCategory,
 } from "@/lib/ip-billing";
+import { requireRole } from "@/lib/api-auth";
 
 /**
  * POST: 取引先の未送信の請求データを、現在のタリフで再計算する。
@@ -21,6 +22,8 @@ import {
  * SF送信済み・対応不要のデータは対象外（送信後に金額が変わると不整合になるため）。
  */
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const { tenantId } = (await req.json()) as { tenantId?: string };
     if (!tenantId) {

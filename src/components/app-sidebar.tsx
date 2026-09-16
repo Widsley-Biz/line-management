@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { canManageBilling } from "@/lib/roles";
 import {
   LayoutDashboard,
   Network,
@@ -25,32 +26,33 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
+// leaderOnly: true のメニューは admin / leader だけに表示する
 const commonItems = [
-  { href: "/",         label: "ダッシュボード", icon: LayoutDashboard },
-  { href: "/import",   label: "インポート",     icon: Upload },
+  { href: "/",         label: "ダッシュボード", icon: LayoutDashboard, leaderOnly: true },
+  { href: "/import",   label: "インポート",     icon: Upload, leaderOnly: true },
   { href: "/tenants",  label: "取引先",         icon: Users },
   { href: "/activity", label: "更新履歴",       icon: History },
   { href: "/notifications", label: "お知らせ",   icon: Bell },
-  { href: "/settings", label: "設定",           icon: Settings },
+  { href: "/settings", label: "設定",           icon: Settings, leaderOnly: true },
 ];
 
 const ipItems = [
   { href: "/ip/master",     label: "回線マスタ",   icon: Database },
   { href: "/ip/billing",    label: "請求管理",     icon: CreditCard },
-  { href: "/ip/sf-pending", label: "SF未送信一覧", icon: AlertCircle },
-  { href: "/ip/unmatched",  label: "未照合一覧",   icon: FileWarning },
+  { href: "/ip/sf-pending", label: "SF未送信一覧", icon: AlertCircle, leaderOnly: true },
+  { href: "/ip/unmatched",  label: "未照合一覧",   icon: FileWarning, leaderOnly: true },
   { href: "/ip/numbers",    label: "契約番号一覧", icon: Network },
-  { href: "/ip/tariffs",    label: "タリフ設定",   icon: Calculator },
+  { href: "/ip/tariffs",    label: "タリフ設定",   icon: Calculator, leaderOnly: true },
 ];
 
 const mobileItems = [
   { href: "/mobile/master",         label: "回線マスタ",     icon: Database },
   { href: "/mobile/billing",        label: "請求管理",       icon: CreditCard },
-  { href: "/mobile/sf-pending",     label: "SF未送信一覧",   icon: AlertCircle },
-  { href: "/mobile/unmatched",      label: "未照合一覧",     icon: FileWarning },
+  { href: "/mobile/sf-pending",     label: "SF未送信一覧",   icon: AlertCircle, leaderOnly: true },
+  { href: "/mobile/unmatched",      label: "未照合一覧",     icon: FileWarning, leaderOnly: true },
   { href: "/mobile/devices",        label: "契約端末一覧",   icon: Smartphone },
-  { href: "/mobile/concierge",      label: "コンシェル同期", icon: RefreshCw },
-  { href: "/mobile/billing-items",  label: "課金項目マスタ", icon: Settings },
+  { href: "/mobile/concierge",      label: "コンシェル同期", icon: RefreshCw, leaderOnly: true },
+  { href: "/mobile/billing-items",  label: "課金項目マスタ", icon: Settings, leaderOnly: true },
 ];
 
 export function AppSidebar() {
@@ -67,7 +69,11 @@ export function AppSidebar() {
     .slice(0, 2)
     .toUpperCase() ?? "?";
 
-  const tabItems = tab === "ip" ? ipItems : mobileItems;
+  const isLeader = canManageBilling(session?.user?.role);
+  const visibleCommonItems = commonItems.filter((i) => !i.leaderOnly || isLeader);
+  const tabItems = (tab === "ip" ? ipItems : mobileItems).filter(
+    (i) => !i.leaderOnly || isLeader
+  );
 
   return (
     <aside className="flex flex-col w-56 min-h-screen bg-gray-900 text-gray-100">
@@ -86,7 +92,7 @@ export function AppSidebar() {
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {/* 共通メニュー */}
-          {commonItems.map(({ href, label, icon: Icon }) => {
+          {visibleCommonItems.map(({ href, label, icon: Icon }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
             return (
               <Link

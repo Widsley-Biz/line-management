@@ -4,8 +4,11 @@ import { mobileUsages, mobileUsageDetails, mobileLines } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
+import { requireRole } from "@/lib/api-auth";
 
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const { phoneNumber, yearMonth, itemName, amount } = await req.json();
 

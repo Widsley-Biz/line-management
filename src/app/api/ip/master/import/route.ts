@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { normalizePhoneNumber, phoneMatchKey } from "@/lib/ip-billing";
+import { requireRole } from "@/lib/api-auth";
 
 function parseCsvLine(line: string): string[] {
   const cols: string[] = [];
@@ -27,6 +28,8 @@ function parseCsvLine(line: string): string[] {
 
 // CSVフォーマット: 電話番号,裏番号,取引先(会社名 or tenantスラッグ),ステータス,備考
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;

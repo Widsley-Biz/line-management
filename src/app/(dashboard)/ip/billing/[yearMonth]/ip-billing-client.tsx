@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { useSession } from "next-auth/react";
+import { canManageBilling } from "@/lib/roles";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +42,9 @@ export function IpBillingClient({
   rows: Row[];
   yearMonth: string;
 }) {
+  const { data: session } = useSession();
+  // SF反映・再集計は admin / leader のみ
+  const canBilling = canManageBilling(session?.user?.role);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -183,7 +188,7 @@ export function IpBillingClient({
               全社CSV
             </a>
 
-            {pendingCount > 0 && (
+            {canBilling && pendingCount > 0 && (
               <Button
                 size="sm"
                 variant="outline"
@@ -195,7 +200,7 @@ export function IpBillingClient({
               </Button>
             )}
 
-            {checkedIds.length > 0 && (
+            {canBilling && checkedIds.length > 0 && (
               <Button
                 size="sm"
                 onClick={() => executeBulkSend(checkedIds)}
@@ -204,7 +209,7 @@ export function IpBillingClient({
                 {bulkSending ? "送信中..." : `選択${checkedIds.length}件を送信`}
               </Button>
             )}
-            {pendingCount > 0 && (
+            {canBilling && pendingCount > 0 && (
               <Button size="sm" onClick={() => executeBulkSend(pendingIds)} disabled={bulkSending}>
                 {bulkSending ? "送信中..." : "一括SF送信"}
               </Button>
@@ -221,12 +226,14 @@ export function IpBillingClient({
                 <thead>
                   <tr className="border-b bg-gray-50">
                     <th className="px-4 py-3 w-8">
-                      <input
-                        type="checkbox"
-                        checked={checked.size === pendingRows.length && pendingRows.length > 0}
-                        onChange={toggleAll}
-                        className="rounded"
-                      />
+                      {canBilling && (
+                        <input
+                          type="checkbox"
+                          checked={checked.size === pendingRows.length && pendingRows.length > 0}
+                          onChange={toggleAll}
+                          className="rounded"
+                        />
+                      )}
                     </th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">会社名</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">固定分</th>
@@ -243,7 +250,7 @@ export function IpBillingClient({
                     return (
                       <tr key={r.id} className="border-b hover:bg-gray-50">
                         <td className="px-4 py-3">
-                          {isPending && (
+                          {canBilling && isPending && (
                             <input
                               type="checkbox"
                               checked={checked.has(r.id)}

@@ -7,6 +7,7 @@ import { logActivity } from "@/lib/audit";
 import { auth } from "@/lib/auth";
 import { getUserSFConnection } from "@/lib/sf-connection";
 import { getIpBillingPeriod } from "@/lib/ip-billing";
+import { requireRole } from "@/lib/api-auth";
 
 // SF商品（OpportunityLineItem）2種
 const SF_PRODUCTS = [
@@ -92,6 +93,8 @@ async function sendToSF(
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const body = await req.json();
     const { tenantId, yearMonth, usageIds } = body as {

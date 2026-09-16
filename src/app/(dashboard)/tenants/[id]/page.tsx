@@ -16,9 +16,12 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { formatYen, formatYearMonth } from "@/lib/format";
 import { ArrowLeft } from "lucide-react";
+import { assertRole } from "@/lib/action-auth";
+import { logActivity } from "@/lib/audit";
 
 async function updateTenant(id: string, formData: FormData) {
   "use server";
+  const { userId } = await assertRole(["admin", "leader", "member"]);
   const companyName = formData.get("companyName") as string;
   const slug = formData.get("slug") as string;
   const sfOpportunityId = (formData.get("sfOpportunityId") as string) || null;
@@ -32,6 +35,15 @@ async function updateTenant(id: string, formData: FormData) {
     assigneeId: assigneeId || null, status, notes,
     updatedAt: new Date().toISOString(),
   }).where(eq(tenants.id, id));
+
+  await logActivity({
+    userId,
+    actionType: "tenant_update",
+    message: `取引先を更新しました: ${companyName}（コード: ${slug}）`,
+    targetTable: "tenants",
+    targetId: id,
+    afterJson: { companyName, slug, sfOpportunityId, mfPartnerId, assigneeId, status, notes },
+  });
 
   redirect(`/tenants/${id}?tab=info`);
 }

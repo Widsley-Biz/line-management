@@ -1,9 +1,14 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { canManageBilling } from "@/lib/roles";
 import { db } from "@/lib/db";
 import { mobileUsages, tenants } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { SfPendingClient } from "./sf-pending-client";
 
 export default async function SfPendingPage() {
+  const session = await auth();
+  if (!canManageBilling(session?.user?.role)) redirect("/");
   const rows = await db
     .select({
       id: mobileUsages.id,

@@ -1,9 +1,18 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { canManageBilling, landingPathFor } from "@/lib/roles";
 import { db } from "@/lib/db";
 import { ipMasterUnmatched, tenants } from "@/lib/db/schema";
 import { ne, eq } from "drizzle-orm";
 import { MasterUnmatchedClient } from "./master-unmatched-client";
 
 export default async function IpMasterUnmatchedPage() {
+  const guardSession = await auth();
+  // 回線マスタの未照合も admin / leader のみ
+  if (!canManageBilling(guardSession?.user?.role)) {
+    redirect(landingPathFor(guardSession?.user?.role));
+  }
+
   const [rows, allTenants] = await Promise.all([
     db
       .select()

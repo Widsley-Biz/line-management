@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { phoneMatchKey } from "@/lib/phone";
+import { requireRole } from "@/lib/api-auth";
 
 function parseCsvLine(line: string): string[] {
   const cols: string[] = [];
@@ -39,6 +40,8 @@ function normalizePhone(raw: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;

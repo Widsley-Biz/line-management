@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { logActivity } from "@/lib/audit";
 import { runInTransaction } from "@/lib/db/tx";
 import { recalcIpUsage } from "@/lib/ip-billing";
+import { requireRole } from "@/lib/api-auth";
 
 /**
  * POST: 指定した利用年月の未送信の請求データを、保存済みの明細から再集計する。
@@ -16,6 +17,8 @@ import { recalcIpUsage } from "@/lib/ip-billing";
  * SF送信済み・対応不要のデータは、送信後に金額が変わると不整合になるため対象外。
  */
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const { yearMonth } = (await req.json()) as { yearMonth?: string };
     if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {

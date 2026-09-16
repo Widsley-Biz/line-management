@@ -5,6 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/audit";
 import { DEFAULT_TARIFF } from "@/lib/ip-billing";
+import { requireRole } from "@/lib/api-auth";
 
 function parseRates(body: Record<string, unknown>): { fixedRate: number; mobileRate: number; naviSecRate: number; naviAmountRate: number } | { error: string } {
   const fixedRate = Number(body.fixedRate);
@@ -27,6 +28,8 @@ function parseRates(body: Record<string, unknown>): { fixedRate: number; mobileR
 
 // デフォルトタリフの更新 / 取引先別タリフの登録・更新
 export async function POST(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const body = await req.json();
     const tenantId = (body.tenantId as string | null) || null;
@@ -135,6 +138,8 @@ export async function POST(req: NextRequest) {
 
 // 取引先別上書きの解除（デフォルトに戻す）
 export async function DELETE(req: NextRequest) {
+  const guard = await requireRole(["admin", "leader"]);
+  if (!guard.ok) return guard.response;
   try {
     const { tenantId } = await req.json();
     if (!tenantId) {

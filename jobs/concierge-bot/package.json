@@ -1,0 +1,12 @@
+{
+  "name": "concierge-bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs",
+    "codegen": "playwright codegen $SB_CONCIERGE_LOGIN_URL"
+  },
+  "dependencies": {
+    "playwright": "1.56.0"
+  }
+}

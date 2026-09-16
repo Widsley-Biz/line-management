@@ -111,6 +111,28 @@ export function ConciergeClient({
   const [result, setResult] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<null | "approve" | "reject">(null);
   const [q, setQ] = useState(filters.q);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  /** コンシェルからの取得を手動で起動する。実処理は Cloud Run Job 側 */
+  async function startSync() {
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch("/api/concierge/sync", { method: "POST" });
+      const data = (await res.json()) as { error?: string; note?: string };
+      if (!res.ok) throw new Error(data.error ?? "同期を開始できませんでした");
+      setSyncMessage(
+        data.note ??
+          "同期を開始しました。完了まで数分かかります。画面を再読み込みすると進捗が分かります"
+      );
+      router.refresh();
+    } catch (e) {
+      setSyncMessage(e instanceof Error ? e.message : "同期を開始できませんでした");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const checkedRows = rows.filter((r) => checked[r.id]);
@@ -245,6 +267,14 @@ export function ConciergeClient({
               <span className="ml-2 text-amber-700">
                 （請求ファイル＝その月の断面。以降の開通・機種変更・解約は未反映）
               </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <Button size="sm" variant="outline" onClick={startSync} disabled={syncing}>
+              {syncing ? "開始しています..." : "コンシェルから取得"}
+            </Button>
+            {syncMessage && (
+              <span className="text-xs text-gray-600">{syncMessage}</span>
             )}
           </div>
           {lastRun && (

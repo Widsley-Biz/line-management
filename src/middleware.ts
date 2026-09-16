@@ -23,5 +23,9 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\.png|.*\\.svg|.*\\.jpg|.*\\.ico).*)"],
+  // mock-concierge は concierge-bot の動作確認用のダミーサイト。
+  // 本番では page 側が notFound() を返すので、ここで除外しても公開されない。
+  matcher: [
+    "/((?!api|mock-concierge/|_next/static|_next/image|favicon.ico|.*\\.png|.*\\.svg|.*\\.jpg|.*\\.ico).*)",
+  ],
 };

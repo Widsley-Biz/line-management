@@ -40,7 +40,7 @@ SBが正の項目も**自動では上書きしない**。差分を出して人�
 ## データの流れ
 
 ```
-請求ファイル取込（/import）        Playwrightでの日次取得（Phase C・未実装）
+請求ファイル取込（/import）        Playwrightでの日次取得（Phase C・土台実装済み）
         │ source='billing_csv'              │ source='concierge'
         └──────────────┬───────────────────┘
                        ▼
@@ -82,8 +82,8 @@ SBが正の項目も**自動では上書きしない**。差分を出して人�
 | いつ | 何が起きるか | 状態 |
 |---|---|---|
 | 請求ファイルを `/import` で取り込んだとき | メタデータ列（ICCID・IMEI・氏名・部署・料金プラン）を拾って差分を作る | **実装済み** |
-| 毎朝8時（Cloud Scheduler） | Playwrightでコンシェルから全回線を取得して差分を作る | Phase C（未実装） |
-| 画面の「更新」ボタン | 上と同じ処理を手動で起動 | Phase C（未実装） |
+| 毎朝8時（Cloud Scheduler） | Playwrightでコンシェルから全回線を取得して差分を作る | Phase C（Scheduler未設定） |
+| 画面の「コンシェルから取得」ボタン | 上と同じ処理を手動で起動 | 実装済み |
 
 ## いま台帳がいつ時点の情報なのか
 
@@ -189,6 +189,13 @@ SBが正の項目も**自動では上書きしない**。差分を出して人�
 | 承認API（**台帳を触れる唯一の場所**） | `src/app/api/concierge/diffs/route.ts` |
 | 差分承認画面 | `src/app/(dashboard)/mobile/concierge/` |
 | 請求取込への組み込み | `src/app/api/billing/import/route.ts` |
+| 同期の起動（Scheduler / 画面ボタン） | `src/app/api/concierge/sync/route.ts` |
+| ボットからの結果受け取り（**DBに書くのはここ**） | `src/app/api/concierge/observed/route.ts` |
+| Cloud Run Job の起動 | `src/lib/concierge/job.ts` |
+| 受信データの正規化 | `src/lib/concierge/observed-payload.ts` |
+| Playwrightボット本体 | `jobs/concierge-bot/index.mjs` |
+| **サイト依存（codegenで差し替える唯一の場所）** | `jobs/concierge-bot/site.mjs` |
+| 動作確認用のダミーサイト（開発環境のみ） | `src/app/mock-concierge/` |
 | 通知 | `src/lib/notify.ts` / `src/lib/slack.ts` |
 | 認可ヘルパー | `src/lib/api-auth.ts` |
 | マイグレーション | `drizzle/migrations/0012_concierge_sync.sql` |
@@ -201,7 +208,11 @@ SBが正の項目も**自動では上書きしない**。差分を出して人�
 
 ## 未対応・既知の制約
 
-- **Phase C（Playwrightでの日次取得）が未実装**。台帳は請求ファイルの断面までしか追いつかない
+- **Phase C は土台のみ**。パイプラインはモックサイトで通しの動作確認済みだが、
+  次の3つが残っている。完了するまで台帳は請求ファイルの断面までしか追いつかない
+  - `jobs/concierge-bot/site.mjs` のロケーターが実サイト用になっていない（codegenの録画待ち）
+  - Cloud Run Job `concierge-bot` が未作成
+  - Cloud Scheduler API が未有効（日次実行が動かない）
 - **Phase D（氏名欄のコンシェルへの書き込み）が未実装**。`name_mismatch` は承認までで止まる
 - 取引先マスタは12社だが、請求ファイルには数百社分・3,561回線がある。大半は取引先未登録
 - `src/middleware.ts` の matcher が `/api` を除外しているため、**既存の `/api/*` は認証を通らない**。

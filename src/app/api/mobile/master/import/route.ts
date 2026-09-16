@@ -39,6 +39,12 @@ function normalizePhone(raw: string): string {
   return raw.trim();
 }
 
+// ICCID / IMEI からハイフン・空白を除いて数字だけにする。空なら null
+function normalizeDigits(raw: string | undefined): string | null {
+  const v = (raw ?? "").replace(/[\s-]/g, "").trim();
+  return v === "" ? null : v;
+}
+
 export async function POST(req: NextRequest) {
   const guard = await requireRole(["admin", "leader"]);
   if (!guard.ok) return guard.response;
@@ -77,19 +83,35 @@ export async function POST(req: NextRequest) {
     // 1行目はヘッダーとしてスキップ
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
-      if (cols.length < 2) continue;
+      if (cols.length < 4) continue;
 
+      // 列順: 電話番号,ICCID,IMEI,会社名,ステータス,契約開始日,解約日,備考
       const phoneNumber = normalizePhone(cols[0] ?? "");
-      const companyName = cols[1]?.trim() ?? "";
-      const status = (cols[2]?.trim() || "契約中") as "契約中" | "解約済";
-      const contractStart = cols[3]?.trim() || null;
-      const contractEnd = cols[4]?.trim() || null;
-      const notes = cols[5]?.trim() || null;
+      const iccid = normalizeDigits(cols[1]);
+      const imei = normalizeDigits(cols[2]);
+      const companyName = cols[3]?.trim() ?? "";
+      const status = (cols[4]?.trim() || "契約中") as "契約中" | "解約済";
+      const contractStart = cols[5]?.trim() || null;
+      const contractEnd = cols[6]?.trim() || null;
+      const notes = cols[7]?.trim() || null;
 
       if (!phoneNumber || !companyName) {
         errors.push(`行${i + 1}: 電話番号または会社名が空です`);
         skipped++;
         continue;
+      }
+
+      // 桁数が合わないものは、行ごと落とさず該当項目だけ空にして取り込む。
+      // 判定は コンシェル同期の validateIdentifiers と同じ基準に揃える。
+      let validIccid = iccid;
+      let validImei = imei;
+      if (validIccid && !/^\d{19,20}$/.test(validIccid)) {
+        errors.push(`行${i + 1}: ICCIDの形式が不正なため空で登録します（${validIccid}）`);
+        validIccid = null;
+      }
+      if (validImei && !/^\d{15}$/.test(validImei)) {
+        errors.push(`行${i + 1}: IMEIの形式が不正なため空で登録します（${validImei}）`);
+        validImei = null;
       }
 
       // テナント照合
@@ -115,6 +137,8 @@ export async function POST(req: NextRequest) {
         phoneKey: phoneMatchKey(phoneNumber),
         tenantId,
         status,
+        iccid: validIccid,
+        imei: validImei,
         contractStart: contractStart || null,
         contractEnd: contractEnd || null,
         notes: notes || null,

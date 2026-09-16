@@ -146,8 +146,9 @@ export function MobileMasterClient({ lines, tenants }: Props) {
 
   function downloadTemplate() {
     const bom = "\uFEFF";
-    const header = "電話番号,会社名,ステータス,契約開始日,解約日,備考";
-    const example = "090-1234-5678,株式会社サンプル,契約中,2024-01-01,,";
+    const header = "電話番号,ICCID,IMEI,会社名,ステータス,契約開始日,解約日,備考";
+    const example =
+      "090-1234-5678,8981200000000000000,350000000000000,株式会社サンプル,契約中,2024-01-01,,";
     const blob = new Blob([bom + header + "\n" + example], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -190,10 +191,12 @@ export function MobileMasterClient({ lines, tenants }: Props) {
           <CardContent className="space-y-4">
             <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-xs text-blue-800 space-y-1">
               <p className="font-medium">CSVフォーマット（1行目はヘッダー）</p>
-              <p className="font-mono">電話番号,会社名,ステータス,契約開始日,解約日,備考</p>
+              <p className="font-mono">電話番号,ICCID,IMEI,会社名,ステータス,契約開始日,解約日,備考</p>
+              <p className="text-gray-500">※必須は「電話番号」と「会社名」。他は空欄で構いません</p>
               <p className="text-gray-500">※ステータスは「契約中」または「解約済」（省略時は「契約中」）</p>
               <p className="text-gray-500">※日付はYYYY-MM-DD形式（省略可）</p>
               <p className="text-gray-500">※電話番号はハイフンあり・なし両対応</p>
+              <p className="text-gray-500">※ICCIDは19〜20桁、IMEIは15桁。桁数が合わない場合はその項目だけ空で登録します</p>
             </div>
             <Button variant="outline" size="sm" onClick={downloadTemplate}>
               <FileText className="h-4 w-4 mr-2" />テンプレートをダウンロード

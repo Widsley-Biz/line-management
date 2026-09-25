@@ -17,8 +17,9 @@
 | 画面の「コンシェルから取得」ボタン | 実装済み |
 | モックサイトでの通し確認 | 済（差分なし／IMEI変更／解約／ログイン失敗の4パターン） |
 | **実サイト用のロケーター** | **実装済み（2026-09-25 に実画面で確認）** |
-| **Cloud Run Job `concierge-bot`** | **未作成** |
-| **Cloud Scheduler** | **API未有効** |
+| セットアップ手順 | `jobs/concierge-bot/setup.sh` に用意済み |
+| **Cloud Run Job `concierge-bot`** | **未作成（setup.sh deploy で作る）** |
+| **Cloud Scheduler** | **未作成（setup.sh schedule で作る）** |
 
 ---
 
@@ -118,66 +119,58 @@ HEADLESS=0 node index.mjs
 
 ---
 
-## 2. Cloud Run Job を作る
+## 2〜4. 本番で動かす（`jobs/concierge-bot/setup.sh`）
+
+必要な手順はスクリプトにまとめてある。**何度実行しても同じ結果になる**ので、
+途中で失敗したらそのまま再実行してよい。
 
 ```bash
 cd jobs/concierge-bot
-gcloud builds submit --tag gcr.io/widsley-dx/concierge-bot
+gcloud auth login          # 期限が切れやすいので毎回確認する
 
-gcloud run jobs create concierge-bot \
-  --image gcr.io/widsley-dx/concierge-bot \
-  --region asia-northeast1 \
-  --memory 2Gi \
-  --task-timeout 30m \
-  --max-retries 0
+./setup.sh secrets    # 1. 認証情報を Secret Manager に登録（画面で直接入力）
+./setup.sh deploy     # 2. イメージをビルドして Cloud Run Job を作る
+./setup.sh wire       # 3. 本体から Job を起動できるようにする
+./setup.sh schedule   # 4. 毎朝8時の自動実行を作る
+
+./setup.sh status     # どこまでできているか確認
+./setup.sh run        # 手動で1回流してみる
 ```
 
-- **メモリは2Gi以上**。Chromiumは512MiBでは動かない（PERF-02と同じ轍を踏まない）
-- **リトライは0**。同じ取得を二重に走らせても差分が増えるだけで意味がない
-- **DBをマウントしない**。INV-1（DBに書くのは本体サービスだけ）を守るため
+`./setup.sh all` で 1〜4 を続けて実行できる。
 
-### 環境変数（Jobのみ・本体サービスには設定しない）
+### 何を作るか
 
-| 変数 | 内容 |
-|---|---|
-| `SB_CONCIERGE_LOGIN_URL` | コンシェルのログインURL |
-| `SB_CONCIERGE_ID` | ログインID |
-| `SB_CONCIERGE_PASSWORD` | パスワード |
+| 種別 | 名前 | 中身 |
+|---|---|---|
+| Secret | `sb-concierge-id` / `sb-concierge-password` | コンシェルのログイン情報。**対話入力なので画面にもログにも残らない** |
+| Secret | `scheduler-token` | Scheduler からの起動を認証する。`openssl rand` で自動生成 |
+| サービスアカウント | `concierge-bot@…` | **Job専用。Secret の読み取り以外の権限を一切持たない** |
+| Cloud Run Job | `concierge-bot` | メモリ2Gi / リトライ0 / DBはマウントしない |
+| Scheduler | `concierge-daily` | 毎朝8時（日本時間）に `/api/concierge/sync` をPOST |
 
-`RUN_ID` / `CALLBACK_TOKEN` / `CALLBACK_URL` は本体がJob起動時に上書きで渡すので、
-ここでは設定しない。
+### なぜ Job 専用のサービスアカウントを作るのか
 
-**認証情報はSecret Managerに置くことを推奨**（`docs/DEPLOYMENT.md` の未対応項目）。
-外部サービスのログイン情報を平文の環境変数に置いたままにしない。
+INV-1（DBに書くのは本体サービスだけ）を、コードの約束だけでなく**IAMでも担保する**ため。
+このSAには Secret の読み取りしか与えていないので、仮にボットがDBを触ろうとしても
+権限で弾かれる。本体のSAを流用しないこと。
 
-### 本体サービス側に必要な設定
+### 環境変数の対応
 
-| 変数 | 内容 |
-|---|---|
-| `CONCIERGE_JOB_NAME` | `concierge-bot`（既定値と同じなら省略可） |
-| `CONCIERGE_JOB_REGION` | `asia-northeast1`（同上） |
-| `APP_BASE_URL` | ボットが結果を返す先。例 `https://line-management-...run.app` |
+| どこに | 変数 | 出どころ |
+|---|---|---|
+| Job | `SB_CONCIERGE_LOGIN_URL` | 平文（公開URLなので秘密ではない） |
+| Job | `SB_CONCIERGE_ID` / `SB_CONCIERGE_PASSWORD` | Secret Manager |
+| Job | `RUN_ID` / `CALLBACK_TOKEN` / `CALLBACK_URL` | **本体が起動時に上書きで渡す**（設定不要） |
+| 本体 | `CONCIERGE_JOB_NAME` / `CONCIERGE_JOB_REGION` / `APP_BASE_URL` | `setup.sh wire` が設定 |
+| 本体 | `SCHEDULER_TOKEN` | Secret Manager |
 
-本体のサービスアカウントに **`roles/run.invoker`**（Job起動用）が要る。
+### 注意：コード変更のデプロイ後に確認すること
 
----
-
-## 3. Cloud Scheduler で毎朝8時に回す
-
-```bash
-gcloud services enable cloudscheduler.googleapis.com
-
-gcloud scheduler jobs create http concierge-daily \
-  --location asia-northeast1 \
-  --schedule "0 8 * * *" \
-  --time-zone "Asia/Tokyo" \
-  --uri "https://<本体URL>/api/concierge/sync" \
-  --http-method POST \
-  --headers "x-scheduler-token=<SCHEDULER_TOKENと同じ値>"
-```
-
-本体サービスに `SCHEDULER_TOKEN` を設定しておく。未設定だとトークン認証が通らず、
-ログインセッションのない Scheduler からは起動できない。
+本体の環境変数は `gcloud run services update` で入れている。main への push で走る
+Cloud Build が `--set-env-vars` を使う作りだと**上書きで消える可能性がある**。
+最初のコードデプロイのあと一度だけ `./setup.sh status` と、本体の環境変数に
+`APP_BASE_URL` が残っているかを確認すること。消えていたら `./setup.sh wire` を再実行する。
 
 ---
 

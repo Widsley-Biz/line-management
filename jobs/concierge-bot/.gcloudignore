@@ -1,0 +1,6 @@
+# Cloud Build にアップロードしないもの
+node_modules/
+npm-debug.log*
+.DS_Store
+README.md
+setup.sh

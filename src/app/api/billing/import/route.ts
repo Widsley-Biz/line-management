@@ -30,6 +30,14 @@ type SoftBankResult = ImportResult & {
   preview?: {
     billingItems: string[];
     unknownItems: string[];
+    /** 未登録項目ごとの、このファイル内での金額と件数（判断材料として画面に出す） */
+    unknownItemDetails?: {
+      itemName: string;
+      count: number;
+      total: number;
+      positive: number;
+      negative: number;
+    }[];
   };
 };
 
@@ -116,7 +124,9 @@ async function importSoftBank(
   const BILLING_HEADER_KEYWORDS = [
     "基本料", "通話料", "通信料", "月額料", "手数料", "情報料",
     "定額料", "使用料", "代行分", "調整金", "利用料", "その他　",
-    "　無料", "　割引",
+    // ヘッダー名は .trim() 済みで先頭の全角スペースが落ちるため、
+    // 「　無料」「　割引」と書くと一致しない（BUG-09）。空白なしで持つ。
+    "無料", "割引",
   ];
   const isBillingHeader = (h: string) =>
     BILLING_HEADER_KEYWORDS.some((kw) => h.includes(kw));
@@ -181,13 +191,52 @@ async function importSoftBank(
     for (const [, itemName] of colNameMap) {
       if (itemMap.get(itemName)?.isBillable) billingItems.push(itemName);
     }
+
+    // 未登録項目ごとに、このファイル内での金額と件数を集計する。
+    // 「課金」を選ぶと請求額がいくら動くのかを見てから判断できるようにするため。
+    // 例: 「割引　端末貸出出精割引」は -3,069,000円 で、誤って課金にすると事故になる。
+    const uniqueUnknown = [...new Set(unknownItems)];
+    const colsOf = (name: string) => {
+      const idxs: number[] = [];
+      for (let i = 0; i < headerRow.length; i++) {
+        if (String(headerRow[i] ?? "").trim() === name) idxs.push(i);
+      }
+      return idxs;
+    };
+    // 税区分行・小計行を除いた実データ行だけを数える
+    const realRows = dataRows.filter((values) => {
+      const n = String(values[nameColIdx] ?? "").trim();
+      const ph = String(values[phoneColIdx] ?? "").trim();
+      return Boolean(n || ph);
+    });
+
+    const unknownItemDetails = uniqueUnknown.map((name) => {
+      let total = 0;
+      let positive = 0;
+      let negative = 0;
+      let count = 0;
+      for (const idx of colsOf(name)) {
+        for (const values of realRows) {
+          const raw = values[idx];
+          const val = typeof raw === "number" ? raw : parseFloat(String(raw ?? "")) || 0;
+          if (val === 0) continue;
+          count++;
+          total += val;
+          if (val > 0) positive += val;
+          else negative += val;
+        }
+      }
+      return { itemName: name, count, total, positive, negative };
+    });
+
     return {
       success: 0,
       unmatched: [],
       errors: [],
       preview: {
         billingItems: [...new Set(billingItems)],
-        unknownItems: [...new Set(unknownItems)],
+        unknownItems: uniqueUnknown,
+        unknownItemDetails,
       },
     };
   }

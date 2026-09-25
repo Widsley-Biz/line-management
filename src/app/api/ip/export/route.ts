@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { ipUsages, ipUsageDetails, tenants } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { requireUser } from "@/lib/api-auth";
 
 function csvEscape(v: string | number | null | undefined): string {
   const s = String(v ?? "");
@@ -11,6 +12,11 @@ function csvEscape(v: string | number | null | undefined): string {
 
 // GET /api/ip/export?yearMonth=YYYY-MM&type=summary|numbers
 export async function GET(req: NextRequest) {
+  // 請求内訳（会社名・電話番号・金額）が出るのでログイン必須にする。
+  // 閲覧とエクスポートは viewer にも許可しているのでロールは絞らない。
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+
   try {
     const yearMonth = req.nextUrl.searchParams.get("yearMonth") ?? "";
     const type = req.nextUrl.searchParams.get("type") ?? "summary";

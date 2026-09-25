@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Upload, FileText, Loader2, Smartphone, CheckCircle2, AlertTriangle, X, Network } from "lucide-react";
-import { formatJapanesePhoneNumber, formatJstDateTime } from "@/lib/format";
+import { formatJapanesePhoneNumber, formatJstDateTime, formatYen } from "@/lib/format";
 import { readJson } from "@/lib/fetch-json";
 import {
   Dialog,
@@ -23,15 +23,25 @@ interface SoftBankImportResult {
   errors: string[];
 }
 
+type UnknownItemDetail = {
+  itemName: string;
+  count: number;
+  total: number;
+  positive: number;
+  negative: number;
+};
+
 interface SbPreview {
   billingItems: string[];
   unknownItems: string[];
+  unknownItemDetails?: UnknownItemDetail[];
 }
 
 type UnknownClassification = {
   itemName: string;
   isBillable: boolean;
   skip: boolean;
+  detail?: UnknownItemDetail;
 };
 
 type CdrUnmatchedNumber = {
@@ -180,7 +190,13 @@ export function ImportForm() {
         const preview: SbPreview = data.softBank?.preview ?? { billingItems: [], unknownItems: [] };
         setSbPreview(preview);
         setUnknownClassifications(
-          preview.unknownItems.map((name) => ({ itemName: name, isBillable: true, skip: false }))
+          preview.unknownItems.map((name) => {
+            const detail = preview.unknownItemDetails?.find((d) => d.itemName === name);
+            // マイナスしか出ていない項目（割引・返金）を「課金」で取り込むと
+            // その額がまるごと請求から引かれる。初期値は「非課金」に倒す。
+            const negativeOnly = !!detail && detail.negative < 0 && detail.positive === 0;
+            return { itemName: name, isBillable: !negativeOnly, skip: false, detail };
+          })
         );
       } catch (e) {
         setError(e instanceof Error ? e.message : "エラーが発生しました");
@@ -299,7 +315,35 @@ export function ImportForm() {
                       key={idx}
                       className={`rounded-lg border px-3 py-2 ${item.skip ? "opacity-40 bg-gray-50" : "bg-white"}`}
                     >
-                      <p className="text-sm text-gray-800 mb-1.5 font-medium">{item.itemName}</p>
+                      <p className="text-sm text-gray-800 mb-0.5 font-medium">{item.itemName}</p>
+                      {item.detail && (
+                        <p className="text-xs mb-1.5">
+                          <span
+                            className={
+                              item.detail.total < 0
+                                ? "text-red-600 font-semibold"
+                                : "text-gray-700 font-semibold"
+                            }
+                          >
+                            {formatYen(item.detail.total)}
+                          </span>
+                          <span className="text-gray-400">
+                            {" "}
+                            / {item.detail.count}件
+                          </span>
+                          {item.detail.negative < 0 && item.detail.positive > 0 && (
+                            <span className="text-gray-400">
+                              {" "}
+                              （+{formatYen(item.detail.positive)} / {formatYen(item.detail.negative)}）
+                            </span>
+                          )}
+                          {item.detail.negative < 0 && item.detail.positive === 0 && (
+                            <span className="ml-1 text-amber-700">
+                              マイナスのみ。課金にすると請求から差し引かれます
+                            </span>
+                          )}
+                        </p>
+                      )}
                       <div className="flex gap-1.5">
                         {[
                           { label: "課金", value: true, isSkip: false },

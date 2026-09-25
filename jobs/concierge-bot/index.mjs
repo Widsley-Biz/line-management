@@ -37,13 +37,27 @@ function step(level, stepName, message) {
   console.log(`[${level}] ${stepName}: ${message}`);
 }
 
-/** 画面の見出し → 内部名 の対応表を作る */
+/**
+ * 画面の見出し → 内部名 の対応表を作る。
+ *
+ * 完全一致を先に試す。部分一致だけにすると、例えば内部名 `msnCtrlFlg`
+ * （ケータイ機能制御）が電話番号の候補 `msn` に誤って当たる。
+ */
 function buildColumnMap(headers) {
+  const norm = (v) => v.replace(/\s+/g, "");
   const map = {};
   for (const [internal, candidates] of Object.entries(COLUMN_ALIASES)) {
-    const hit = headers.find((h) =>
-      candidates.some((c) => h.replace(/\s+/g, "").includes(c))
-    );
+    let hit = null;
+    for (const c of candidates) {
+      hit = headers.find((h) => norm(h) === norm(c));
+      if (hit) break;
+    }
+    if (!hit) {
+      for (const c of candidates) {
+        hit = headers.find((h) => norm(h).includes(norm(c)));
+        if (hit) break;
+      }
+    }
     if (hit) map[internal] = hit;
   }
   return map;

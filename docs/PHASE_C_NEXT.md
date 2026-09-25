@@ -1,9 +1,9 @@
 # Phase C（コンシェルからの日次取得）— 次にやること
 
-**最終更新：** 2026年9月16日
+**最終更新：** 2026年9月25日
 
-土台は実装済みで、モックサイト相手に通しの動作確認まで終わっている。
-残りは「実サイトにつなぐ」「動かす場所を作る」の2つ。
+土台は実装済み。ロケーターも実サイトで確認済み。
+残りは「動かす場所を作る」（Cloud Run Job と Scheduler）。
 
 ---
 
@@ -16,35 +16,91 @@
 | Playwrightボット本体 | 実装済み `jobs/concierge-bot/index.mjs` |
 | 画面の「コンシェルから取得」ボタン | 実装済み |
 | モックサイトでの通し確認 | 済（差分なし／IMEI変更／解約／ログイン失敗の4パターン） |
-| **実サイト用のロケーター** | **未（codegenの録画待ち）** |
+| **実サイト用のロケーター** | **実装済み（2026-09-25 に実画面で確認）** |
 | **Cloud Run Job `concierge-bot`** | **未作成** |
 | **Cloud Scheduler** | **API未有効** |
 
 ---
 
-## 1. ロケーターを実サイト用に差し替える
+## 1. 実サイトの構造（2026-09-25 実画面で確認済み）
 
-**触るのは `jobs/concierge-bot/site.mjs` だけ。** `index.mjs` は変更しない。
+`jobs/concierge-bot/site.mjs` に反映済み。サイトが変わったらここだけ直す。
 
-```bash
-cd jobs/concierge-bot
-npm install
-npx playwright install chromium
-SB_CONCIERGE_LOGIN_URL=https://<コンシェルのURL> npm run codegen
-```
+### URL
 
-録画した操作を4つの関数に写す。`TODO(codegen)` のコメントが目印。
-
-| 関数 | 約束 |
+| 用途 | URL |
 |---|---|
-| `login(page, {loginUrl, id, password})` | 失敗したら throw する |
-| `gotoLineList(page)` | 回線一覧のページまで移動する |
-| `readPage(page)` | 表示中の表を `[{見出し: 値}, ...]` で返す |
-| `gotoNextPage(page)` | 進めたら true、最終ページなら false |
+| ログイン | `https://portal.business.mb.softbank.jp/portal/BPS0001/index` |
+| 回線情報の照会 | `https://portal.business.mb.softbank.jp/portal/admin/line/BPS0201/index` |
 
-列見出しの表記ゆれは `COLUMN_ALIASES` に候補を足せば吸収できる。
+導線は TOP →「回線情報管理」→「回線情報の照会」だが、ログイン後は一覧URLへ直接飛べる。
 
-### 差し替えたら、まず送信せずに確認する
+### ログイン画面
+
+| 項目 | 値 |
+|---|---|
+| フォーム | `form[name="BPS0101ActionForm"]` → POST `/portal/BPS0101/login` |
+| 管理者ID | `input[name="authId"]` |
+| パスワード | `input[name="pwd"]` |
+| ログイン | **`<a>` リンク**（`javascript:void(0)`）。`<button>` ではない |
+
+### 一覧の構造（ここが肝）
+
+列が**固定列と横スクロール列の2つの表に分かれている**。行番号で突き合わせる。
+
+| 役割 | セレクタ | 持っている列 |
+|---|---|---|
+| 左の見出し | `.header_left table` | 選択 / No. / ステータス / グループ名 / 電話番号 |
+| 右の見出し | `.header_right_content_wrapper table` | SIM種別 / ICCID / PUK / 機種契約番号 / IMEI / 機種名 / 氏名 / 部署名 / 各種サービス |
+| 左の本体 | `.body_left_content_wrapper table.tableControl` | 〃 |
+| 右の本体 | `.ui-flickable-content table.tableControl` | 〃 |
+
+各 `th` が `<div class="column_name">` に**内部フィールド名**を持っている。日本語ラベルより
+安定するのでこちらを使う。
+
+| 内部名 | 意味 |
+|---|---|
+| `msn` | 電話番号 |
+| `equipmentSerialNbr` | ICCID |
+| `newestImei` | 製造番号（IMEI） |
+| `personNm` | 氏名 |
+| `deptNm1` | 部署名(1) |
+| `status` | ステータス |
+
+注意: 「利用可能サービス」はサブ列23個を束ねるグループ見出しで名前を持たない。
+`colspan` の分だけ読み飛ばさないとデータ列と位置がずれる（実装済み）。
+
+### ページ送り
+
+`select[name="tableControlDto.pageViewCount"]`（50 / 100 / **200**）と
+hidden の `tableControlDto.pageNum`。`gotoLineList` で200件表示にしている。
+
+**社内28回線は1ページに収まるため、ページ送りは未検証。**複数ページある
+アカウントで動かすときは、最初に必ず「ご利用回線数」と取得件数を突き合わせること。
+
+### CSVダウンロードでは代替できない
+
+一覧画面には2つのダウンロードがあるが、**どちらもICCIDを持っていない**。
+
+| 取得元 | 電話番号 | 氏名 | IMEI | ICCID |
+|---|:--:|:--:|:--:|:--:|
+| 一括登録用ファイル（`a#download`） | ○ | ○ | × | × |
+| レンタル契約情報（`a#dlRentCntInfCsv`） | ○ | × | ○ | × |
+| **画面の表** | ○ | ○ | ○ | **○** |
+
+ICCIDは番号変更の判定（同じICCIDで番号が変わったら機種そのままの番号変更）に
+必須なので、画面から取る必要がある。
+
+なおレンタル契約情報CSVには確認ダイアログで次の但し書きが出る:
+**前日時点の情報**であること、端末交換後はIMEIが画面と食い違う場合があること、
+再ダウンロードは数分間できないこと。日次同期で使うなら画面側を正とする。
+
+### 動作確認の結果（株式会社Widsley / 28回線）
+
+28件すべてで 電話番号・ICCID・IMEI を取得、電話番号の重複0。
+200件表示に切り替えたあとも同じ結果。氏名は社内回線のため全件空欄。
+
+### 手を入れたら、まず送信せずに確認する
 
 ```bash
 cd jobs/concierge-bot

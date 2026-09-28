@@ -28,21 +28,55 @@ JOB_SA="concierge-bot@${PROJECT}.iam.gserviceaccount.com"
 say() { printf "\n\033[1m%s\033[0m\n" "$*"; }
 ok()  { printf "  ✓ %s\n" "$*"; }
 
+# 値を引数で受け取らない。コマンドライン・シェル履歴・ログのどこにも残さないため。
 ensure_secret() {
   local name="$1" prompt="$2"
   if gcloud secrets describe "$name" --project "$PROJECT" >/dev/null 2>&1; then
-    ok "$name はすでにあります（値を変えるなら --add-version で更新してください）"
+    ok "${name} はすでにあります（値を変えるなら: ./setup.sh rotate ${name} ）"
     return
   fi
+
+  # 対話入力できない環境（CIや、エディタ内蔵のシェル経由）では黙って空の
+  # Secret を作らないよう、ここで止める
+  if [ ! -t 0 ]; then
+    echo "  × $name を作れません: このシェルはキーボード入力を受け取れません" >&2
+    echo "    ターミナル（Terminal.app 等）を自分で開いて、次を実行してください:" >&2
+    echo "      cd $(pwd) && ./setup.sh secrets" >&2
+    return 1
+  fi
+
   say "$prompt"
   echo "  入力は画面に表示されません。入力後 Enter を押してください。"
   local value
   read -rs value
   echo
+  if [ -z "$value" ]; then
+    echo "  × 空のまま登録しようとしたので中止しました" >&2
+    return 1
+  fi
   printf '%s' "$value" | gcloud secrets create "$name" \
     --project "$PROJECT" --replication-policy=automatic --data-file=- >/dev/null
   unset value
   ok "$name を登録しました"
+}
+
+# 既存の Secret の値を入れ替える（パスワード変更時に使う）
+cmd_rotate() {
+  local name="${1:-}"
+  [ -n "$name" ] || { echo "使い方: $0 rotate <secret名>" >&2; exit 1; }
+  if [ ! -t 0 ]; then
+    echo "× ターミナルを自分で開いて実行してください" >&2
+    exit 1
+  fi
+  say "$name の新しい値を入力してください（表示されません）"
+  local value
+  read -rs value
+  echo
+  [ -n "$value" ] || { echo "× 空なので中止しました" >&2; exit 1; }
+  printf '%s' "$value" | gcloud secrets versions add "$name" \
+    --project "$PROJECT" --data-file=- >/dev/null
+  unset value
+  ok "$name を更新しました"
 }
 
 cmd_secrets() {
@@ -189,6 +223,7 @@ case "${1:-}" in
   wire)     cmd_wire ;;
   schedule) cmd_schedule ;;
   status)   cmd_status ;;
+  rotate)   cmd_rotate "${2:-}" ;;
   run)      cmd_run ;;
   all)      cmd_secrets; cmd_deploy; cmd_wire; cmd_schedule; cmd_status ;;
   *)

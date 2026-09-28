@@ -1,9 +1,43 @@
 # Phase C（コンシェルからの日次取得）— 次にやること
 
-**最終更新：** 2026年9月25日
+**最終更新：** 2026年9月28日
 
 土台は実装済み。ロケーターも実サイトで確認済み。
 残りは「動かす場所を作る」（Cloud Run Job と Scheduler）。
+
+---
+
+## ▶ 次にやること（ここから再開する）
+
+**パスワードの登録だけが残っている。** ここが終われば `deploy` → `wire` → `schedule`
+はすべてスクリプトで流せる。
+
+```bash
+# Claude Code の ! 実行ではキーボード入力を受け取れない。
+# Terminal.app など自分のターミナルを開いて実行すること。
+cd /Users/hitominishiumra/sb/lime-management/jobs/concierge-bot
+gcloud auth login          # 認証が切れやすいので先に
+./setup.sh secrets         # パスワードだけ聞かれる（IDは登録済み）
+```
+
+`SB法人コンシェルのパスワードを入力してください` と**表示されてから**打つこと。
+表示前に打つとシェルにコマンドとして流れてしまう。
+
+そのあとは Claude 側でも実行できる:
+
+```bash
+./setup.sh deploy    # イメージをビルドして Cloud Run Job を作る
+./setup.sh wire      # 本体から Job を起動できるようにする
+./setup.sh schedule  # 毎朝8時の自動実行を作る
+./setup.sh status    # 確認
+./setup.sh run       # 手動で1回流す
+```
+
+### 注意：2026-09-25 にパスワードが平文で残った可能性がある
+
+setup.sh の不具合（修正済み）でスクリプトが落ちた直後に、パスワードらしき
+文字列がシェルのコマンドとして入力された。`~/.zsh_history` に残っている
+可能性があるため、**コンシェル側でパスワードを変更してから登録すること**。
 
 ---
 
@@ -18,6 +52,9 @@
 | モックサイトでの通し確認 | 済（差分なし／IMEI変更／解約／ログイン失敗の4パターン） |
 | **実サイト用のロケーター** | **実装済み（2026-09-25 に実画面で確認）** |
 | セットアップ手順 | `jobs/concierge-bot/setup.sh` に用意済み |
+| Secret `sb-concierge-id` | **登録済み** |
+| Secret `scheduler-token` | **登録済み**（自動生成） |
+| Secret `sb-concierge-password` | **未登録 ← ここで止まっている** |
 | **Cloud Run Job `concierge-bot`** | **未作成（setup.sh deploy で作る）** |
 | **Cloud Scheduler** | **未作成（setup.sh schedule で作る）** |
 

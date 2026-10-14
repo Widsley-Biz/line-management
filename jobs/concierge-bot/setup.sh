@@ -28,6 +28,18 @@ JOB_SA="concierge-bot@${PROJECT}.iam.gserviceaccount.com"
 say() { printf "\n\033[1m%s\033[0m\n" "$*"; }
 ok()  { printf "  ✓ %s\n" "$*"; }
 
+# 権限の付与はオーナー権限が要る（Editorでは403になる）。
+# オーナーに先に付けてもらった場合でも止まらないよう、付いていれば飛ばす。
+has_binding() {  # has_binding <get-iam-policyのコマンド…> <member> <role>
+  local role="${@: -1}" member="${@: -2:1}"
+  "${@:1:$#-2}" --format=json 2>/dev/null \
+    | ROLE="$role" MEMBER="$member" python3 -c '
+import json, os, sys
+p = json.load(sys.stdin)
+sys.exit(0 if any(b["role"] == os.environ["ROLE"] and os.environ["MEMBER"] in b.get("members", [])
+                  for b in p.get("bindings", [])) else 1)'
+}
+
 # 値を引数で受け取らない。コマンドライン・シェル履歴・ログのどこにも残さないため。
 ensure_secret() {
   local name="$1" prompt="$2"
@@ -109,6 +121,8 @@ cmd_deploy() {
 
   # 秘密を読める権限だけ与える。DB(GCS)には触らせない
   for s in sb-concierge-id sb-concierge-password; do
+    has_binding gcloud secrets get-iam-policy "$s" --project "$PROJECT" \
+      "serviceAccount:${JOB_SA}" roles/secretmanager.secretAccessor && continue
     gcloud secrets add-iam-policy-binding "$s" \
       --project "$PROJECT" \
       --member "serviceAccount:${JOB_SA}" \
@@ -150,12 +164,16 @@ cmd_wire() {
   ok "本体URL: $url"
   ok "本体のサービスアカウント: $sa"
 
+  has_binding gcloud run jobs get-iam-policy "$JOB" --project "$PROJECT" --region "$REGION" \
+    "serviceAccount:${sa}" roles/run.invoker ||
   gcloud run jobs add-iam-policy-binding "$JOB" \
     --project "$PROJECT" --region "$REGION" \
     --member "serviceAccount:${sa}" \
     --role roles/run.invoker >/dev/null
   ok "本体に Job 起動の権限を付けました"
 
+  has_binding gcloud secrets get-iam-policy scheduler-token --project "$PROJECT" \
+    "serviceAccount:${sa}" roles/secretmanager.secretAccessor ||
   gcloud secrets add-iam-policy-binding scheduler-token \
     --project "$PROJECT" \
     --member "serviceAccount:${sa}" \

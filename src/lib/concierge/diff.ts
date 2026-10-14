@@ -446,6 +446,9 @@ export function computeDiffs(input: ComputeDiffsInput): DiffPlan {
     const k = openKey(od);
     const p = proposalByKey.get(k);
     if (!p) {
+      // 今回見えていない回線の差分は判断材料がないので触らない。
+      // 社内アカウントだけ取得した日や請求CSVの取込で、他の回線の承認待ちを消さないため。
+      if (!detectRemovals && !observedByKey.has(od.phoneKey)) continue;
       supersede.push({ id: od.id, note: "他の経路で解消されたため終了" });
       continue;
     }

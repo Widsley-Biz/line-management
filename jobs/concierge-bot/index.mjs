@@ -8,6 +8,8 @@
  *   RUN_ID / CALLBACK_TOKEN / CALLBACK_URL  … 本体が Job 起動時に渡す
  *   SB_CONCIERGE_LOGIN_URL / SB_CONCIERGE_ID / SB_CONCIERGE_PASSWORD
  *   MAX_PAGES  … ページ送りの安全弁（既定200）
+ *   FULL_LIST  … "1" のときだけ「全回線を取り切った」と報告する（解約判定が走る）。
+ *                社内アカウントのように一部の回線しか見えない間は設定しないこと
  *   HEADLESS   … "0" でブラウザを表示（ローカル確認用）
  */
 import { chromium } from "playwright";
@@ -27,6 +29,7 @@ const {
   SB_CONCIERGE_ID,
   SB_CONCIERGE_PASSWORD,
   MAX_PAGES = "200",
+  FULL_LIST = "0",
   HEADLESS = "1",
 } = process.env;
 
@@ -128,7 +131,9 @@ async function main() {
     const seen = new Set();
     let colMap = null;
     let pageNo = 1;
-    let complete = true;
+    // このアカウントで全回線が見えるときだけ true にする。
+    // 一部しか見えないのに true で返すと、見えなかった回線がすべて解約扱いになる
+    let complete = FULL_LIST === "1";
 
     while (pageNo <= Number(MAX_PAGES)) {
       const rawRows = await readPage(page);

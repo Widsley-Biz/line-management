@@ -61,6 +61,8 @@ type CdrFileResult = {
   tenantCount?: number;
   unmatchedNumbers?: CdrUnmatchedNumber[];
   unknownCallTypes?: string[];
+  warnings?: string[];
+  verified?: { dataLines: number; seconds: number; amount: number };
 };
 
 // Cloud Runのリクエストサイズ上限は32MiB。これを超えるファイルはアプリに届く前に
@@ -562,6 +564,19 @@ export function ImportForm() {
                         </Badge>
                       )}
                     </div>
+                    {r.verified && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        突き合わせ済み: ファイルのデータ{r.verified.dataLines.toLocaleString()}行すべてを取込・未紐付け・取込対象外のいずれかに分類し、保存内容を読み戻して一致を確認しました
+                      </p>
+                    )}
+                    {(r.warnings?.length ?? 0) > 0 && (
+                      <div className="mt-2 bg-red-50 border border-red-200 rounded p-2">
+                        <p className="text-xs font-medium text-red-700 mb-1">請求に反映されていない行があります（要確認）</p>
+                        {r.warnings!.map((w, i) => (
+                          <p key={i} className="text-xs text-red-700">{w}</p>
+                        ))}
+                      </div>
+                    )}
                     {(r.unmatchedNumbers?.length ?? 0) > 0 && (
                       <div className="mt-2">
                         <p className="text-xs font-medium text-amber-700 mb-1">

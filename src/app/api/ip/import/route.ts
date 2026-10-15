@@ -36,6 +36,10 @@ export async function POST(req: NextRequest) {
             importedRows: result.importedRows,
             unmatched: result.unmatchedNumbers?.map((u) => u.phoneNumber),
             unknownCallTypes: result.unknownCallTypes,
+            skippedRows: result.skippedRows,
+            unknownCallTypeSummary: result.unknownCallTypeSummary,
+            verified: result.verified,
+            warnings: result.warnings,
           },
         });
       }

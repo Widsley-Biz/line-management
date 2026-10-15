@@ -199,6 +199,7 @@ CDR CSV（Shift-JIS / 月6ファイル程度）を /import からアップロー
 
 - **本番はCloud Run（`line-management-168668335532.asia-northeast1.run.app`）で、mainへのpushでデプロイされる**。コンテナ起動時に `scripts/migrate-on-start.mjs` が未適用マイグレーションを自動適用する（journal未管理の既存DBは0007までベースライン登録してから差分適用。失敗してもサーバー起動は妨げない — Cloud Runのログを確認）
 - **`npm run db:migrate` はdevサーバーを止めてから実行する**：migrateスクリプトはDBをWALモードで開くが、アプリはDELETEモードで開くため、同時に動かすと `SQLITE_BUSY: database is locked` が発生する。発生してしまったら、サーバーを止めて `node -e "require('better-sqlite3')('lime.db').pragma('journal_mode = DELETE')"` でWALを解除してから再起動する。
+- **CDR取込は分割不要・取りこぼしチェック付き（2026-10-15〜）**：大きいCSVも1回で取り込める（`src/lib/cdr-lines.ts` で1行ずつ処理。メモリ512Miのまま）。取込のたびに「行数・秒数・金額の一致」と「保存後の読み戻し」を自動で確認し、1つでも合わなければ何も保存せず中止する。取込対象外にした行は画面に赤字で出る。詳細は TASKS.md の完了タスク。
 - **CDRの文字コード**：Shift-JIS前提。ただしUTF-8として完全に妥当なファイルはUTF-8として読む（`decodeCdrBuffer`）。
 - **列マッピング**はA〜Oの15列固定（0始まりで A=0請求アカウント, C=2請求月, D=3利用月, F=5ご利用番号, H=7通話種別名称, N=13通話時間, O=14通話料金）。列構成が変わる場合は `src/lib/cdr-import.ts` の `COL` を修正。
 - **「差分投入」の意味**：キャリアから届くファイル自体が差分（追加分のみ）である前提。累積ファイル（前回分を含む全量）を再投入すると二重計上になるので運用注意。全量やり直したい場合は該当月の `ip_usage_details` / `ip_usages` / `ip_import_files` を削除してから取込し直す。

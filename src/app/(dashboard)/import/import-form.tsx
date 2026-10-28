@@ -9,6 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Upload, FileText, Loader2, Smartphone, CheckCircle2, AlertTriangle, X, Network } from "lucide-react";
 import { formatJapanesePhoneNumber, formatJstDateTime, formatYen } from "@/lib/format";
 import { readJson } from "@/lib/fetch-json";
+import Link from "next/link";
+import { removeAssignedRows, type UnmatchedNumberWithRows } from "@/lib/cdr-unmatched-rows";
+import { CdrUnmatchedAssignDialog } from "./cdr-unmatched-assign-dialog";
 import {
   Dialog,
   DialogContent,
@@ -44,11 +47,7 @@ type UnknownClassification = {
   detail?: UnknownItemDetail;
 };
 
-type CdrUnmatchedNumber = {
-  phoneNumber: string;
-  rowCount: number;
-  totalSeconds: number;
-};
+type CdrUnmatchedNumber = UnmatchedNumberWithRows;
 
 type CdrFileResult = {
   fileName: string;
@@ -96,7 +95,9 @@ type ImportedFile = {
   importedAt: string;
 };
 
-export function ImportForm() {
+type TenantOption = { id: string; companyName: string };
+
+export function ImportForm({ tenants }: { tenants: TenantOption[] }) {
   const [yearMonth, setYearMonth] = useState("");
   const [importedFiles, setImportedFiles] = useState<ImportedFile[] | null>(null);
   const [cdrFiles, setCdrFiles] = useState<File[]>([]);
@@ -106,6 +107,8 @@ export function ImportForm() {
   const [cdrResults, setCdrResults] = useState<CdrFileResult[] | null>(null);
   const [sbResult, setSbResult] = useState<SoftBankImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 取込結果カードから割り当てる未紐付け番号（モーダル表示中のもの）
+  const [assignTarget, setAssignTarget] = useState<CdrUnmatchedNumber | null>(null);
 
   // SoftBank課金項目確認ダイアログ
   const [sbPreview, setSbPreview] = useState<SbPreview | null>(null);
@@ -580,13 +583,30 @@ export function ImportForm() {
                     {(r.unmatchedNumbers?.length ?? 0) > 0 && (
                       <div className="mt-2">
                         <p className="text-xs font-medium text-amber-700 mb-1">
-                          未紐付け番号（{r.unmatchedNumbers!.length}件）— 未照合一覧（IP回線）から取引先を割り当ててください
+                          未紐付け番号（{r.unmatchedNumbers!.length}件）— 「割当」から取引先を割り当てるか、
+                          <Link href="/ip/unmatched" className="underline hover:text-amber-900">
+                            未照合一覧（IP回線）
+                          </Link>
+                          で対応してください
                         </p>
-                        <div className="max-h-32 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2">
+                        <div className="max-h-48 overflow-y-auto bg-amber-50 border border-amber-200 rounded p-2 space-y-0.5">
                           {r.unmatchedNumbers!.map((u, i) => (
-                            <p key={i} className="text-xs text-amber-800 font-mono">
-                              {formatJapanesePhoneNumber(u.phoneNumber)}（{u.rowCount}行 / {u.totalSeconds}秒）
-                            </p>
+                            <div key={i} className="flex items-center justify-between gap-2">
+                              <p className="text-xs text-amber-800 font-mono">
+                                {formatJapanesePhoneNumber(u.phoneNumber)}（{u.rowCount}行 / {u.totalSeconds}秒）
+                              </p>
+                              {(u.rows?.length ?? 0) > 0 && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => setAssignTarget(u)}
+                                >
+                                  割当
+                                </Button>
+                              )}
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -647,6 +667,19 @@ export function ImportForm() {
           </CardContent>
         </Card>
       )}
+
+      <CdrUnmatchedAssignDialog
+        target={assignTarget}
+        tenants={tenants}
+        onClose={() => setAssignTarget(null)}
+        onAssigned={(ids) => {
+          setCdrResults((prev) => (prev ? removeAssignedRows(prev, ids) : prev));
+          // 一部の利用月だけ失敗した場合は、残った分だけをモーダルに残す
+          setAssignTarget((prev) =>
+            prev?.rows ? { ...prev, rows: prev.rows.filter((row) => !ids.includes(row.id)) } : prev
+          );
+        }}
+      />
 
       {/* 取込済みCDRファイル一覧（二重取込の防止用） */}
       <Card>

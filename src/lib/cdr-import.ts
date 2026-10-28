@@ -12,6 +12,7 @@ import { randomUUID } from "crypto";
 import { decodeCsvBuffer } from "@/lib/csv";
 import { runInTransaction } from "@/lib/db/tx";
 import { forEachCdrLine, scanCdrBytes } from "@/lib/cdr-lines";
+import { attachUnmatchedRows, type UnmatchedRowRef } from "@/lib/cdr-unmatched-rows";
 import { formatJstDateTime } from "@/lib/format";
 import {
   classifyCallType,
@@ -65,6 +66,8 @@ export type UnmatchedNumber = {
   phoneNumber: string;
   rowCount: number;
   totalSeconds: number;
+  /** この番号の未照合レコード（ip_import_unmatched）のID・利用月。取込結果画面からの割当に使う */
+  rows?: UnmatchedRowRef[];
 };
 
 /** 未紐付け番号の通話種別内訳（ip_import_unmatched.items_json の形） */
@@ -459,7 +462,13 @@ export async function importCdrFile(
   const insertedDetailIds: string[] = [];
   let writtenDetailSeconds = 0;
   let writtenDetailAmount = 0;
-  const writtenUnmatched: { id: string; itemsJson: string; totalSeconds: number }[] = [];
+  const writtenUnmatched: {
+    id: string;
+    phoneNumber: string;
+    yearMonth: string;
+    itemsJson: string;
+    totalSeconds: number;
+  }[] = [];
 
   // 以降の書き込みは1トランザクションにまとめる。
   // 個別コミットだとGCSマウント上のDBでは同期が数百回発生しタイムアウトする。
@@ -541,7 +550,13 @@ export async function importCdrFile(
             updatedAt: now,
           })
           .where(eq(ipImportUnmatched.id, existing.id));
-        writtenUnmatched.push({ id: existing.id, itemsJson, totalSeconds });
+        writtenUnmatched.push({
+          id: existing.id,
+          phoneNumber: uAgg.phoneNumber,
+          yearMonth: uAgg.yearMonth,
+          itemsJson,
+          totalSeconds,
+        });
       } else {
         const id = randomUUID();
         const itemsJson = JSON.stringify(uAgg.items);
@@ -556,7 +571,13 @@ export async function importCdrFile(
           createdAt: now,
           updatedAt: now,
         });
-        writtenUnmatched.push({ id, itemsJson, totalSeconds: uAgg.totalSeconds });
+        writtenUnmatched.push({
+          id,
+          phoneNumber: uAgg.phoneNumber,
+          yearMonth: uAgg.yearMonth,
+          itemsJson,
+          totalSeconds: uAgg.totalSeconds,
+        });
       }
     }
 
@@ -639,7 +660,7 @@ export async function importCdrFile(
     rowCount,
     importedRows,
     tenantCount: affected.size,
-    unmatchedNumbers: Array.from(unmatchedMap.values()),
+    unmatchedNumbers: attachUnmatchedRows(unmatchedMap, writtenUnmatched),
     unknownCallTypes: Array.from(unknownCallTypes),
     unknownCallTypeSummary,
     skippedRows: { shortRows, noUsageMonthRows, unknownTypeRows },

@@ -15,7 +15,7 @@ import {
   DIFF_TYPE_HINTS,
   DIFF_STATUS_LABELS,
   DIRECTION_LABELS,
-  RUN_STATUS_LABELS,
+  runStatusLabel,
   RUN_TYPE_LABELS,
 } from "@/lib/concierge/labels";
 import {
@@ -285,7 +285,7 @@ export function ConciergeClient({
               <span className="text-gray-500">最終実行</span>{" "}
               <span className="font-semibold">
                 {RUN_TYPE_LABELS[lastRun.runType] ?? lastRun.runType} /{" "}
-                {RUN_STATUS_LABELS[lastRun.status] ?? lastRun.status}
+                {runStatusLabel(lastRun.status, lastRun.errorMessage)}
               </span>
               <span className="ml-2 text-gray-500">
                 {formatJstDateTime(lastRun.finishedAt ?? lastRun.queuedAt)}

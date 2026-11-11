@@ -45,6 +45,20 @@ export const RUN_STATUS_LABELS: Record<string, string> = {
   timeout: "タイムアウト",
 };
 
+/**
+ * 同期の実行結果の表示名。
+ *
+ * partial は2通りある（src/app/api/concierge/observed/route.ts）。
+ * - 読めない行があった … errorMessage あり。本当に一部しか取り込めていない
+ * - 全件取得の報告がない（FULL_LIST 未設定）… errorMessage なし。
+ *   取り込みは全部できていて、解約判定だけ止めている。毎回これになるので
+ *   「一部成功」と出すと失敗したように見えてしまう
+ */
+export function runStatusLabel(status: string, errorMessage: string | null): string {
+  if (status === "partial" && !errorMessage) return "成功（解約判定なし）";
+  return RUN_STATUS_LABELS[status] ?? status;
+}
+
 export const RUN_TYPE_LABELS: Record<string, string> = {
   probe: "調査",
   read: "読み取り",

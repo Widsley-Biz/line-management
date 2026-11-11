@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { Users, Clock, History, ArrowRight, RefreshCw, AlertTriangle } from "lucide-react";
 import { DashboardTabs } from "./dashboard-tabs";
+import { runStatusLabel } from "@/lib/concierge/labels";
 import { auth } from "@/lib/auth";
 import { canManageBilling, canViewDashboard, landingPathFor } from "@/lib/roles";
 import { redirect } from "next/navigation";
@@ -195,7 +196,8 @@ export default async function DashboardPage() {
             {lastSyncAt ? (
               <span className={syncStale ? "text-red-700 font-semibold" : "font-semibold"}>
                 {relativeTime(lastSyncAt)}
-                {lastSync && lastSync.status !== "succeeded" && `（${lastSync.status}）`}
+                {lastSync && lastSync.status !== "succeeded" &&
+                  `・${runStatusLabel(lastSync.status, lastSync.errorMessage)}`}
               </span>
             ) : (
               <span className="text-red-700 font-semibold">未実行</span>

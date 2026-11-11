@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,8 @@ type Row = {
   beforeValue: string | null;
   afterValue: string | null;
   baseConciergeValue: string | null;
+  /** 「SBの氏名欄」列に出す氏名。種別に関係なく氏名だけが入る */
+  sbContactName: string | null;
   status: string;
   note: string | null;
   errorMessage: string | null;
@@ -528,9 +531,22 @@ export function ConciergeClient({
                       {DIRECTION_LABELS[r.direction]}
                     </div>
                   </td>
-                  <td className="p-2 font-mono whitespace-nowrap">{r.phoneNumber}</td>
+                  <td className="p-2 font-mono whitespace-nowrap">
+                    {r.phoneNumber}
+                    {/* 台帳にある回線だけ。書き込みは回線マスタの画面に一本化している */}
+                    {r.mobileLineId && (
+                      <div>
+                        <Link
+                          href={`/mobile/master?edit=${r.mobileLineId}`}
+                          className="font-sans text-[10px] text-blue-700 underline"
+                        >
+                          回線を編集
+                        </Link>
+                      </div>
+                    )}
+                  </td>
                   <td className="p-2">
-                    {r.baseConciergeValue ?? "—"}
+                    {r.sbContactName ?? "—"}
                     {r.diffType === "line_added" && r.suggestedTenantId && (
                       <div className="text-[10px] text-green-700">取引先に一致</div>
                     )}

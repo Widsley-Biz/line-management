@@ -8,7 +8,7 @@ import {
   conciergeSyncRuns,
   tenants,
 } from "@/lib/db/schema";
-import { and, count, desc, eq, like, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, like, or, sql } from "drizzle-orm";
 import { ConciergeClient } from "./concierge-client";
 
 const PAGE_SIZE = 50;
@@ -138,6 +138,31 @@ export default async function ConciergePage({
   const tenantByName = new Map(
     allTenants.map((t) => [t.companyName.trim(), t.id])
   );
+
+  // 「SBの氏名欄」列に出す値。
+  // base_concierge_value は差分の種別ごとに中身が違う（SIM再発行ならICCID、
+  // 端末交換ならIMEI…）ので、そのまま氏名として出すと番号が氏名に見えてしまう。
+  // 氏名を比べる種別（新規開通・氏名欄の不一致）だけ検出時の値を使い、
+  // それ以外はコンシェル台帳に今入っている氏名を出す。
+  const NAME_DIFF_TYPES = new Set(["line_added", "name_mismatch"]);
+  const keysNeedingMirror = [
+    ...new Set(
+      rows.filter((r) => !NAME_DIFF_TYPES.has(r.diffType)).map((r) => r.phoneKey)
+    ),
+  ];
+  const mirrorNames =
+    keysNeedingMirror.length > 0
+      ? await db
+          .select({
+            phoneKey: conciergeLines.phoneKey,
+            contactName: conciergeLines.contactName,
+          })
+          .from(conciergeLines)
+          .where(inArray(conciergeLines.phoneKey, keysNeedingMirror))
+      : [];
+  const mirrorNameByKey = new Map(
+    mirrorNames.map((m) => [m.phoneKey, m.contactName?.trim() || null])
+  );
   const enriched = rows.map((r) => {
     let contactName: string | null = null;
     let imei: string | null = null;
@@ -154,6 +179,9 @@ export default async function ConciergePage({
     }
     return {
       ...r,
+      sbContactName: NAME_DIFF_TYPES.has(r.diffType)
+        ? r.baseConciergeValue?.trim() || null
+        : mirrorNameByKey.get(r.phoneKey) ?? null,
       contactName,
       imei,
       iccid,

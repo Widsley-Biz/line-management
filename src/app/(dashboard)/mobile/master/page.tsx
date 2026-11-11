@@ -3,7 +3,12 @@ import { mobileLines, tenants } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { MobileMasterClient } from "./mobile-master-client";
 
-export default async function MobileMasterPage() {
+export default async function MobileMasterPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ edit?: string }>;
+}) {
+  const { edit } = await searchParams;
   const lines = await db
     .select({
       id: mobileLines.id,
@@ -29,5 +34,7 @@ export default async function MobileMasterPage() {
     .where(eq(tenants.status, "active"))
     .orderBy(tenants.companyName);
 
-  return <MobileMasterClient lines={lines} tenants={allTenants} />;
+  return (
+    <MobileMasterClient lines={lines} tenants={allTenants} initialEditId={edit ?? null} />
+  );
 }

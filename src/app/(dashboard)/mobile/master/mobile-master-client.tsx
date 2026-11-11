@@ -32,6 +32,8 @@ type Tenant = {
 type Props = {
   lines: MobileLine[];
   tenants: Tenant[];
+  /** コンシェル同期画面などから ?edit=<回線ID> で来たとき、最初からその回線の編集を開く */
+  initialEditId?: string | null;
 };
 
 type ImportResult = {
@@ -64,15 +66,19 @@ function DeviceReturnedBadge({ value }: { value: number }) {
   );
 }
 
-export function MobileMasterClient({ lines, tenants }: Props) {
+export function MobileMasterClient({ lines, tenants, initialEditId }: Props) {
   const { data: session } = useSession();
   // 回線マスタの登録・編集・削除・CSV登録は admin / leader のみ
   const canBilling = canManageBilling(session?.user?.role);
   const [search, setSearch] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  const initialEdit = initialEditId
+    ? lines.find((l) => l.id === initialEditId) ?? null
+    : null;
+  const [showForm, setShowForm] = useState(!!initialEdit);
   const [showImport, setShowImport] = useState(false);
-  const [editTarget, setEditTarget] = useState<MobileLine | null>(null);
+  const [editTarget, setEditTarget] = useState<MobileLine | null>(initialEdit);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -94,20 +100,31 @@ export function MobileMasterClient({ lines, tenants }: Props) {
       contractStart: (form.elements.namedItem("contractStart") as HTMLInputElement).value || null,
       contractEnd: (form.elements.namedItem("contractEnd") as HTMLInputElement).value || null,
       deviceReturned: parseInt((form.elements.namedItem("deviceReturned") as HTMLSelectElement).value),
+      imei: (form.elements.namedItem("imei") as HTMLInputElement).value,
+      iccid: (form.elements.namedItem("iccid") as HTMLInputElement).value,
       notes: (form.elements.namedItem("notes") as HTMLInputElement).value || null,
       id: editTarget?.id,
     };
 
-    await fetch("/api/mobile/master", {
+    setFormError(null);
+    const res = await fetch("/api/mobile/master", {
       method: editTarget ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
+    if (!res.ok) {
+      // 桁数の誤りなどは入力をそのまま残して直してもらう
+      const err = await res.json().catch(() => null);
+      setFormError(err?.error ?? "保存に失敗しました");
+      setIsSubmitting(false);
+      return;
+    }
 
     setIsSubmitting(false);
     setShowForm(false);
     setEditTarget(null);
-    window.location.reload();
+    // ?edit= で開いた場合に、再読み込みで同じ編集フォームがまた開かないよう外す
+    window.location.assign(window.location.pathname);
   }
 
   async function handleDelete(id: string) {
@@ -172,7 +189,7 @@ export function MobileMasterClient({ lines, tenants }: Props) {
               <Button variant="outline" onClick={() => { setShowImport(!showImport); setShowForm(false); }}>
                 <Upload className="h-4 w-4 mr-2" />CSV一括登録
               </Button>
-              <Button onClick={() => { setEditTarget(null); setShowForm(true); setShowImport(false); }}>
+              <Button onClick={() => { setEditTarget(null); setShowForm(true); setShowImport(false); setFormError(null); }}>
                 <Plus className="h-4 w-4 mr-2" />新規登録
               </Button>
             </>
@@ -252,7 +269,8 @@ export function MobileMasterClient({ lines, tenants }: Props) {
       )}
 
       {/* 登録・編集フォーム */}
-      {showForm && (
+      {/* ?edit= の直リンクで来ても、保存できない権限にはフォームを出さない */}
+      {showForm && canBilling && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
@@ -260,7 +278,12 @@ export function MobileMasterClient({ lines, tenants }: Props) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4 md:grid-cols-3">
+            {/* 編集中に別の回線の鉛筆を押したとき、入力欄を新しい回線の値で作り直す */}
+            <form
+              key={editTarget?.id ?? "new"}
+              onSubmit={handleSubmit}
+              className="grid grid-cols-2 gap-4 md:grid-cols-3"
+            >
               <div className="space-y-1">
                 <Label className="text-xs">携帯番号 *</Label>
                 <Input
@@ -317,14 +340,39 @@ export function MobileMasterClient({ lines, tenants }: Props) {
                 </select>
               </div>
               <div className="space-y-1">
+                <Label className="text-xs">IMEI（15桁）</Label>
+                <Input
+                  name="imei"
+                  inputMode="numeric"
+                  placeholder="任意"
+                  defaultValue={editTarget?.imei ?? ""}
+                  className="h-8 text-sm font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">ICCID（19〜20桁）</Label>
+                <Input
+                  name="iccid"
+                  inputMode="numeric"
+                  placeholder="任意"
+                  defaultValue={editTarget?.iccid ?? ""}
+                  className="h-8 text-sm font-mono"
+                />
+              </div>
+              <div className="space-y-1">
                 <Label className="text-xs">備考</Label>
                 <Input name="notes" placeholder="任意" defaultValue={editTarget?.notes ?? ""} className="h-8 text-sm" />
               </div>
+              {formError && (
+                <div className="col-span-2 md:col-span-3 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                  {formError}
+                </div>
+              )}
               <div className="col-span-2 md:col-span-3 flex gap-2">
                 <Button type="submit" size="sm" disabled={isSubmitting}>
                   {isSubmitting ? "保存中..." : editTarget ? "更新する" : "登録する"}
                 </Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => { setShowForm(false); setEditTarget(null); }}>
+                <Button type="button" size="sm" variant="outline" onClick={() => { setShowForm(false); setEditTarget(null); setFormError(null); }}>
                   キャンセル
                 </Button>
               </div>
@@ -399,7 +447,7 @@ export function MobileMasterClient({ lines, tenants }: Props) {
                                 size="sm"
                                 variant="ghost"
                                 className="h-7 w-7 p-0"
-                                onClick={() => { setEditTarget(line); setShowForm(true); setShowImport(false); }}
+                                onClick={() => { setEditTarget(line); setShowForm(true); setShowImport(false); setFormError(null); }}
                               >
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>

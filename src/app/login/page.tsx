@@ -1,39 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export default function LoginPage() {
-  const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+const ERROR_MESSAGES: Record<string, string> = {
+  DomainNotAllowed: "@widsley.com の社内Googleアカウントでログインしてください。",
+  NotRegistered:
+    "このアカウントはまだ登録されていません。管理者にユーザーの発行を依頼してください。",
+};
+const DEFAULT_ERROR = "ログインできませんでした。もう一度お試しください。";
+
+function LoginForm() {
+  const params = useSearchParams();
   const [loading, setLoading] = useState(false);
+  const error = params.get("error");
+  const errorMessage = error ? ERROR_MESSAGES[error] ?? DEFAULT_ERROR : null;
+  const callbackUrl = params.get("callbackUrl") ?? "/";
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+  return (
+    <div className="space-y-4">
+      {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+      <Button
+        type="button"
+        className="w-full"
+        disabled={loading}
+        onClick={() => {
+          setLoading(true);
+          // 外部サイトへ飛ばされないよう、戻り先はアプリ内のパスに限る
+          const safe = callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : "/";
+          signIn("google", { redirectTo: safe });
+        }}
+      >
+        {loading ? "Googleに移動しています..." : "Googleでログイン"}
+      </Button>
+      <p className="text-xs text-gray-500">
+        @widsley.com の社内アカウントで、管理者が発行したユーザーのみログインできます。
+      </p>
+    </div>
+  );
+}
 
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
-
-    if (result?.error) {
-      setError("メールアドレスまたはパスワードが正しくありません");
-      setLoading(false);
-    } else {
-      router.push("/");
-    }
-  }
-
+export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <Card className="w-full max-w-md">
@@ -46,37 +56,9 @@ export default function LoginPage() {
           <CardDescription>IP・携帯回線 統合管理システム</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">メールアドレス</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="name@widsley.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">パスワード</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-              />
-            </div>
-            {error && (
-              <p className="text-sm text-red-600">{error}</p>
-            )}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "ログイン中..." : "ログイン"}
-            </Button>
-          </form>
+          <Suspense>
+            <LoginForm />
+          </Suspense>
         </CardContent>
       </Card>
     </div>

@@ -1,19 +1,21 @@
 // Edge-compatible auth config (no DB/Node.js-only imports)
 import type { NextAuthConfig } from "next-auth";
-import Credentials from "next-auth/providers/credentials";
+import Google from "next-auth/providers/google";
+
+/** ログインを許す Google Workspace のドメイン */
+export const ALLOWED_GOOGLE_DOMAIN = "widsley.com";
 
 export const authConfig: NextAuthConfig = {
   providers: [
-    // Provider config here is minimal — actual credential verification
-    // happens in auth.ts (Node.js runtime only)
-    Credentials({
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
-      },
-      // authorize runs only in Node.js context (auth.ts overrides this)
-      async authorize() {
-        return null;
+    // AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET を環境変数から読む
+    Google({
+      authorization: {
+        params: {
+          // アカウント選択画面で widsley.com 以外を出さない（見た目の絞り込み。
+          // 本当の判定は auth.ts の signIn で id_token の hd を見て行う）
+          hd: ALLOWED_GOOGLE_DOMAIN,
+          prompt: "select_account",
+        },
       },
     }),
   ],
@@ -38,6 +40,7 @@ export const authConfig: NextAuthConfig = {
   },
   pages: {
     signIn: "/login",
+    error: "/login",
   },
   session: { strategy: "jwt" },
 };

@@ -6,7 +6,6 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { users, ipTariffs } from "./schema";
-import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import path from "path";
 
@@ -38,8 +37,8 @@ async function seed() {
   ];
 
   // 初回パスワード: "Widsley2024!" — 初回ログイン後に変更を促す
-  const defaultPassword = "Widsley2024!";
-  const hash = await bcrypt.hash(defaultPassword, 12);
+  // ログインは Google のみ。password_hash は使わない
+  const hash = "!google-login-only";
 
   for (const u of initialUsers) {
     await db
@@ -66,8 +65,7 @@ async function seed() {
   console.log("  ✓ default IP tariff created (0.06 / 0.25 / 1.2 / 10.5)");
 
   console.log("\n✅ Seed complete");
-  console.log(`\n📋 Initial password for all users: "${defaultPassword}"`);
-  console.log("   Please ask users to change their password on first login.\n");
+  console.log("\n📋 Users log in with their @widsley.com Google account.\n");
 }
 
 seed().catch(console.error).finally(() => sqlite.close());

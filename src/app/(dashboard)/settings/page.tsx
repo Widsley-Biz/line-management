@@ -2,7 +2,7 @@ import { canViewSettings, landingPathFor } from "@/lib/roles";
 import { Fragment } from "react";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { randomUUID } from "crypto";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,12 +11,30 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Settings, Users } from "lucide-react";
-import bcrypt from "bcryptjs";
 import { auth } from "@/lib/auth";
 import { logActivity } from "@/lib/audit";
 import { ConfirmDeleteButton } from "@/components/confirm-delete-button";
 import { assertRole } from "@/lib/action-auth";
 import { canManageUsers as canManageUsersFor } from "@/lib/roles";
+import { ALLOWED_GOOGLE_DOMAIN } from "@/lib/auth.config";
+
+// ログインは Google（@widsley.com）だけ。パスワードは使わないので、
+// NOT NULL の password_hash にはどのパスワードとも一致しない値を入れておく
+const NO_PASSWORD = "!google-login-only";
+
+const USER_ERRORS = {
+  domain: `メールアドレスは @${ALLOWED_GOOGLE_DOMAIN} の社内アカウントを入力してください`,
+  duplicate: "このメールアドレスのユーザーはすでに登録されています",
+} as const;
+type UserError = keyof typeof USER_ERRORS;
+
+function parseUserEmail(raw: FormDataEntryValue | null): string | null {
+  const email = String(raw ?? "").trim().toLowerCase();
+  const [local, domain, ...rest] = email.split("@");
+  return local && !/\s/.test(local) && domain === ALLOWED_GOOGLE_DOMAIN && rest.length === 0
+    ? email
+    : null;
+}
 
 // ── User actions ─────────────────────────────────────────────
 
@@ -24,14 +42,15 @@ async function createUser(formData: FormData) {
   "use server";
   const { userId } = await assertRole(["admin", "leader"]);
   const name = formData.get("name") as string;
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
   const role = formData.get("role") as string;
-  if (!name || !email || !password) return;
-  const passwordHash = await bcrypt.hash(password, 12);
+  if (!name) return;
+  const email = parseUserEmail(formData.get("email"));
+  if (!email) redirect("/settings?userError=domain");
+  const exists = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).get();
+  if (exists) redirect("/settings?userError=duplicate");
   const id = randomUUID();
   await db.insert(users).values({
-    id, name, email, passwordHash,
+    id, name, email, passwordHash: NO_PASSWORD,
     role: role as "admin" | "leader" | "member" | "viewer",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -51,18 +70,21 @@ async function updateUser(formData: FormData) {
   const { userId } = await assertRole(["admin", "leader"]);
   const id = formData.get("userId") as string;
   const name = formData.get("name") as string;
-  const email = formData.get("email") as string;
   const role = formData.get("role") as string;
-  const newPassword = (formData.get("newPassword") as string) || null;
-  if (!id || !name || !email) return;
-  const updates: Record<string, string> = {
+  if (!id || !name) return;
+  const email = parseUserEmail(formData.get("email"));
+  if (!email) redirect(`/settings?editUser=${id}&userError=domain`);
+  const taken = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.email, email), ne(users.id, id)))
+    .get();
+  if (taken) redirect(`/settings?editUser=${id}&userError=duplicate`);
+  const updates = {
     name, email,
     role: role as "admin" | "leader" | "member" | "viewer",
     updatedAt: new Date().toISOString(),
   };
-  if (newPassword) {
-    updates.passwordHash = await bcrypt.hash(newPassword, 12);
-  }
   await db.update(users).set(updates).where(eq(users.id, id));
   await logActivity({
     userId,
@@ -118,7 +140,7 @@ async function deleteUser(formData: FormData) {
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ editUser?: string; sfError?: string; sfSuccess?: string }>;
+  searchParams: Promise<{ editUser?: string; sfError?: string; sfSuccess?: string; userError?: string }>;
 }) {
   const guardSession = await auth();
   // 設定画面は admin / leader のみ
@@ -126,7 +148,9 @@ export default async function SettingsPage({
     redirect(landingPathFor(guardSession?.user?.role));
   }
 
-  const { editUser, sfError, sfSuccess: _sfSuccess } = await searchParams;
+  const { editUser, sfError, sfSuccess: _sfSuccess, userError } = await searchParams;
+  const userErrorMessage =
+    userError && userError in USER_ERRORS ? USER_ERRORS[userError as UserError] : null;
 
   const userList = await db.select().from(users).orderBy(users.name);
 
@@ -153,6 +177,12 @@ export default async function SettingsPage({
       {_sfSuccess && (
         <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
           SF連携が完了しました
+        </div>
+      )}
+
+      {userErrorMessage && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          {userErrorMessage}
         </div>
       )}
 
@@ -247,10 +277,6 @@ export default async function SettingsPage({
                             <Input name="email" type="email" defaultValue={u.email} required className="h-8 text-sm" />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs">新しいパスワード（変更する場合のみ）</Label>
-                            <Input name="newPassword" type="password" placeholder="未入力で変更なし" className="h-8 text-sm" />
-                          </div>
-                          <div className="space-y-1">
                             <Label className="text-xs">ロール</Label>
                             <select
                               name="role"
@@ -298,7 +324,10 @@ export default async function SettingsPage({
 
           {canManageUsers && (
           <div className="border-t pt-4">
-            <p className="text-sm font-medium mb-3">ユーザー追加</p>
+            <p className="text-sm font-medium mb-1">ユーザー追加</p>
+            <p className="text-xs text-gray-500 mb-3">
+              ここで追加した @{ALLOWED_GOOGLE_DOMAIN} のアカウントだけが「Googleでログイン」で入れます。パスワードの設定はありません。
+            </p>
             <form action={createUser} className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="name">名前 *</Label>
@@ -306,11 +335,7 @@ export default async function SettingsPage({
               </div>
               <div className="space-y-1">
                 <Label htmlFor="email">メール *</Label>
-                <Input id="email" name="email" type="email" required />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="password">パスワード *</Label>
-                <Input id="password" name="password" type="password" required />
+                <Input id="email" name="email" type="email" placeholder={`name@${ALLOWED_GOOGLE_DOMAIN}`} required />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="role">ロール</Label>
